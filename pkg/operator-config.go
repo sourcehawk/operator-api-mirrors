@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/mod/modfile"
 )
@@ -71,12 +72,16 @@ func (o OperatorConfig) Mirror(mirrorRootPath string, moduleRoot string) error {
 		}
 	}
 
-	err = o.rewriteInternalImportsAndCopy(sourceDir, destDir, moduleRoot)
+	mirrorRootPathStripped := strings.TrimPrefix(mirrorRootPath, ".")
+	mirrorRootPathStripped = strings.TrimPrefix(mirrorRootPathStripped, "/")
+	modulePath := fmt.Sprintf("%s/%s", moduleRoot, mirrorRootPathStripped)
+
+	err = o.rewriteInternalImportsAndCopy(sourceDir, destDir, modulePath)
 	if err != nil {
 		return err
 	}
 
-	err = o.createGoMod(sourceDir, destDir, moduleRoot)
+	err = o.createGoMod(sourceDir, destDir, modulePath)
 	if err != nil {
 		return err
 	}
