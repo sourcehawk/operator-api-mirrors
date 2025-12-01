@@ -16,7 +16,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	kbv1 "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/apis/kibana/v1"
-	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/common/labels"
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/common/metadata"
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/common/reconciler"
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/common/tracing"
@@ -62,7 +61,7 @@ func ReconcileConfigSecret(
 		ObjectMeta: metav1.ObjectMeta{
 			Namespace:   kb.Namespace,
 			Name:        kbv1.ConfigSecret(kb.Name),
-			Labels:      labels.AddCredentialsLabel(maps.Clone(meta.Labels)),
+			Labels:      maps.Clone(meta.Labels),
 			Annotations: meta.Annotations,
 		},
 		Data: data,
