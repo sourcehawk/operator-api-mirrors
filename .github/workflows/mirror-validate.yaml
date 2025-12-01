@@ -109,7 +109,7 @@ jobs:
 
       - name: go get module
         env:
-          MOD_ROOT: github.com/sourcehawk/operator-api-mirror/mirrors
+          MOD_ROOT: github.com/sourcehawk/operator-api-mirrors/mirrors
           COMMIT_SHA: ${{ needs.mirror-and-discover.outputs.commit_sha }}
         run: |
           set -euo pipefail
