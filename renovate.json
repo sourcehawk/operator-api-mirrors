@@ -17,12 +17,7 @@
     {
       "matchManagers": ["regex"],
       "matchFiles": ["operators.yaml"],
-      "automerge": true,
-      "automergeType": "pr",
-      "platformAutomerge": false,
-      "requiredStatusChecks": [
-        "Test Mirror APIs (PR) / mirror-test"
-      ]
+      "automerge": false
     }
   ]
 }

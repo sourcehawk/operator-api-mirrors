@@ -93,36 +93,87 @@ This repository **does not contain the mirroring logic**—only the generated mo
 
 ---
 
-## 🔄 Updating mirrors
+## 🛠 Consuming the Mirrored APIs
 
-To update mirrors:
+Each operator mirror is published as a Go module at:
 
-* Use **Renovate** or GitHub Actions in this repository (optional)
-* Run the mirrorer tool in the mirrorer repository
-* Commit the generated mirrors here
-
-If you'd like an example GitHub Actions workflow for automatically updating mirrors, just ask!
-
----
-
-## 🛠 Consuming the mirrored APIs
-
-You can import any mirrored API version directly:
-
-```go
-import "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/v3.2.0/pkg/apis/elasticsearch/v1"
+```txt
+github.com/sourcehawk/operator-api-mirrors/mirrors/<operator>
 ```
 
-Every version is:
+Git tags in this repository follow the pattern:
 
-* pinned
-* reproducible
-* isolated
-* free from upstream implementation packages
+```txt
+mirrors/<operator>/<operator-version>
+```
 
-This ensures your project does not accidentally upgrade operator dependencies or break when upstream changes.
+Per [Go’s multi-module tagging rules](https://go.dev/doc/modules/managing-source#multiple-module-source), those tags 
+allow you to `go get` a specific operator **version** using `@<operator-version>`.
+
+### Fetching a mirrored API version
+
+For example, to depend on the OpenTelemetry operator mirror at `v0.138.0`:
+
+```bash
+go get github.com/sourcehawk/operator-api-mirrors/mirrors/otel-operator@v0.138.0
+```
+
+This pins your project to that exact operator API version.
+
+### Importing mirrored API types
+
+Once added to your `go.mod`, you can import the mirrored API types like this:
+
+```go
+import (
+    otelv1alpha1 "github.com/sourcehawk/operator-api-mirrors/mirrors/otel-operator/apis/v1alpha1"
+)
+```
+
+Use the appropriate package path (`apis/...`, `pkg/apis/...`, etc.) for the operator you’re consuming.
+
+### Guarantees
+
+Every mirrored version is:
+
+* **pinned** – tied to a specific operator version via `@<operator-version>`
+* **reproducible** – generated in a controlled workflow from a known upstream commit
+* **isolated** – no controllers, reconcilers, or extra operator internals
+* **decoupled** – upstream changes won’t silently alter your dependency graph
+
+This lets you use operator CRD Go types safely in your own controllers, tools, or clients without dragging in the operator itself.
 
 ---
+
+## 🔄 Mirroring Workflow
+
+The mirroring process for this repository works as follows:
+
+1. **Renovate opens a PR** whenever it detects a new operator version in `operators.yaml` (in the mirrorer repo).
+2. That PR triggers a **GitHub workflow** that:
+    * runs the mirrorer tool,
+    * regenerates all mirrors for the affected operator
+    * commits any diffs back into the PR branch.
+3. The PR is **manually reviewed and merged**.
+4. After merging, another workflow runs that:
+
+    * inspects the `currentVersion` for each operator in `operators.yaml`,
+    * creates a **tag** for any version that does not already have one in the form
+      `mirrors/<operator>/<operator-version>`.
+
+Each generated mirror is therefore tied to a specific, reviewed version and published as a reproducible, versioned module.
+
+---
+
+### ❗ Why mirrors aren’t auto-merged
+
+Leaving Renovate auto-merge enabled would remove control over version sequencing. This is a problem because:
+
+* You might want to start mirroring an operator from an **earlier version** (e.g., begin at `1.0.0` even though `2.0.0` is the latest).
+* If Renovate auto-merges the bump to `2.0.0` first, there is **no opportunity** to insert `1.0.0`, `1.1.0`, … in between.
+* Mirrors in this repository are expected to be **monotonically increasing (semver)**, so skipped versions cannot be inserted later.
+
+Manual merge ensures you retain full control over the version history and prevents inconsistent or broken mirror sequences.
 
 ## ❓ FAQ
 

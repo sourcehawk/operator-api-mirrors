@@ -1,13 +1,15 @@
 name: Tag mirror versions
 
 on:
-  workflow_run:
-    workflows: ["Mirror APIs"]
-    types: [completed]
+  push:
+    branches:
+      - main
+    paths:
+      - "operators.yaml"
+      - "mirrors/**"
 
 jobs:
   tag-versions:
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -23,45 +25,13 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Install yq and jq
-        run: |
-          set -euo pipefail
-          sudo wget -qO /usr/local/bin/yq \
-            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
-          sudo apt-get update -y
-          sudo apt-get install -y jq
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
 
-      - name: Extract operator/version pairs from operators.yaml
-        id: ops
-        run: |
-          set -euo pipefail
-          pairs=$(yq -r '.operators[] | "\(.slug) \(.currentVersion)"' operators.yaml)
-          echo "pairs<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$pairs" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
+      - name: Run mirrorer tag
+        run: make tag
 
-      - name: Create missing tags for operators
-        run: |
-          set -euo pipefail
-
-          git fetch --tags --force
-
-          echo "Operator/version pairs:"
-          echo "${{ steps.ops.outputs.pairs }}"
-
-          while read -r name version; do
-            # Skip empty lines (can happen if YAML is weird)
-            [ -z "$name" ] && continue
-
-            tag="mirrors/${name}/${version}"
-
-            if git rev-parse "refs/tags/$tag" >/dev/null 2>&1; then
-              echo "Tag $tag already exists, skipping."
-              continue
-            fi
-
-            echo "Creating tag $tag at current HEAD"
-            git tag "$tag"
-            git push origin "$tag"
-          done <<< "${{ steps.ops.outputs.pairs }}"
+      - name: Push tags
+        run: git push origin --tags

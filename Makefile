@@ -32,10 +32,15 @@ help: ## Display this help.
 
 ##@ Build
 
-MIRRORER_VERSION ?= v0.2.0
+MIRRORER_VERSION ?= v0.3.0
 
 .PHONY: mirror
-mirror:  ## Run the mirrorer
+mirror:  ## Run the mirrorer's mirror command
 	go install github.com/sourcehawk/operator-api-mirrorer/cmd/mirrorer@$(MIRRORER_VERSION)
-	mirrorer -config="operators.yaml" -mirrorsPath="./mirrors" -gitRepo="github.com/sourcehawk/operator-api-mirrors"
+	mirrorer mirror --config="operators.yaml" --mirrorsPath="./mirrors" --gitRepo="github.com/sourcehawk/operator-api-mirrors"
+
+.PHONY: tag
+tag:  ## Run the mirrorer's tag command
+	go install github.com/sourcehawk/operator-api-mirrorer/cmd/mirrorer@$(MIRRORER_VERSION)
+	mirrorer tag --config="operators.yaml" --mirrorsPath="./mirrors"
 
