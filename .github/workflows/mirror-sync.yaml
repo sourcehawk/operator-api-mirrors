@@ -1,7 +1,7 @@
-name: Mirror APIs (PR)
+name: Mirror APIs
 
 on:
-  pull_request:
+  push:
     branches:
       - main
     paths:
@@ -9,44 +9,43 @@ on:
   workflow_dispatch:
 
 jobs:
-  mirror:
-    name: mirror
-    if: github.event_name != 'workflow_dispatch' &&
-      startsWith(github.head_ref, 'renovate/') &&
-      github.actor == 'renovate[bot]'
+  sync-mirrors:
+    name: sync-mirrors
     runs-on: ubuntu-latest
     permissions:
-      contents: write # needed to push back to the PR branch
-      pull-requests: write
+      contents: write
 
     steps:
-      - name: Checkout PR branch
+      - name: Checkout main
         uses: actions/checkout@v5
         with:
-          ref: ${{ github.head_ref }}
+          ref: main
 
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
-      - name: Run mirrorer
+      - name: Run mirrorer (regenerate mirrors on main)
         run: |
           go run ./cmd/api-mirrorer/main.go \
             -rootModuleName github.com/sourcehawk/operator-api-mirror \
             -mirrorsPath ./mirrors \
             -config ./operators.yaml
 
-      - name: Commit changes (if any)
+      - name: Commit mirrors (if any changes)
         run: |
+          set -euo pipefail
+          
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git add mirrors/ || true
+
           if git diff --cached --quiet; then
-            echo "No changes from mirrorer, nothing to commit."
+            echo "No mirror changes to commit."
             exit 0
           fi
-          
+
           git commit -m "chore: update mirrored operator APIs"
           git push

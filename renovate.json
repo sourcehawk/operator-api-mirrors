@@ -21,8 +21,7 @@
       "automergeType": "pr",
       "platformAutomerge": true,
       "requiredStatusChecks": [
-        "Mirror APIs (PR) / mirror",
-        "Mirror modules go get check / go-get-test"
+        "Mirror & Validate APIs (PR) / go-get-overall"
       ]
     }
   ]

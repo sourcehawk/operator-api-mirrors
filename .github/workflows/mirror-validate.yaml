@@ -1,0 +1,176 @@
+name: Mirror & Validate APIs (PR)
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - operators.yaml
+
+jobs:
+  mirror-and-discover:
+    name: Mirror APIs on temp branch & discover modules
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # needed to push/delete temporary branch
+
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      commit_sha: ${{ steps.commit-mirrors.outputs.sha }}
+      branch_name: ${{ steps.temp-branch.outputs.branch_name }}
+
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: Create and push temporary mirror branch
+        id: temp-branch
+        run: |
+          set -euo pipefail
+
+          PR_SHA="${{ github.event.pull_request.head.sha }}"
+          SHORT_SHA="${PR_SHA::8}"
+          BRANCH="mirror-validation-${SHORT_SHA}"
+
+          echo "Using temporary branch: ${BRANCH}"
+
+          git checkout -b "${BRANCH}" "${PR_SHA}"
+          git push --set-upstream origin "${BRANCH}"
+
+          echo "branch_name=${BRANCH}" >> "$GITHUB_OUTPUT"
+
+      - name: Run mirrorer (regenerate mirrors)
+        run: |
+          set -euo pipefail
+          go run ./cmd/api-mirrorer/main.go \
+            -rootModuleName github.com/sourcehawk/operator-api-mirror \
+            -mirrorsPath ./mirrors \
+            -config ./operators.yaml
+
+      - name: Commit mirrors (if any changes) and capture SHA
+        id: commit-mirrors
+        run: |
+          set -euo pipefail
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Stage only mirrors/, so we don't touch operators.yaml
+          git add mirrors/ || true
+
+          if git diff --cached --quiet; then
+            echo "No mirror changes to commit; using PR head commit as validation target."
+          else
+            echo "Committing mirror changes..."
+            git commit -m "chore: update mirrored operator APIs (validation)"
+            git push
+          fi
+
+          # Whatever HEAD is now (PR head or new mirror commit) is what we validate
+          SHA="$(git rev-parse HEAD)"
+          echo "Validation will use commit: ${SHA}"
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Install yq and jq
+        run: |
+          set -euo pipefail
+          sudo wget -qO /usr/local/bin/yq \
+            https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
+          sudo apt-get update -y
+          sudo apt-get install -y jq
+
+      - name: Build module matrix
+        id: set-matrix
+        run: |
+          set -euo pipefail
+
+          modules=$(yq -o=json '.operators[] | .slug + "/" + .currentVersion' operators.yaml | jq -s -c .)
+          echo "Modules: $modules"
+
+          echo "matrix={\"module\":$modules}" >> "$GITHUB_OUTPUT"
+
+  go-get-test:
+    name: go get ${{ matrix.module }}
+    needs: mirror-and-discover
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.mirror-and-discover.outputs.matrix) }}
+
+    steps:
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: go get module
+        env:
+          MOD_ROOT: github.com/sourcehawk/operator-api-mirror
+          COMMIT_SHA: ${{ needs.mirror-and-discover.outputs.commit_sha }}
+        run: |
+          set -euo pipefail
+
+          MODULE_PATH="${MOD_ROOT}/${{ matrix.module }}"
+          VERSIONED="${MODULE_PATH}@${COMMIT_SHA}"
+
+          echo "Testing go get for: ${VERSIONED}"
+
+          mkdir -p /tmp/mirror-go-get-test
+          cd /tmp/mirror-go-get-test
+          go mod init mirror-go-get-test
+
+          go get "${VERSIONED}"
+
+  delete-temp-branch:
+    name: Delete temporary mirror branch
+    needs: [mirror-and-discover, go-get-test]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v5
+
+      - name: Delete temporary branch
+        run: |
+          set -euo pipefail
+
+          BRANCH="${{ needs.mirror-and-discover.outputs.branch_name }}"
+          if [ -z "${BRANCH}" ]; then
+            echo "No branch name found, nothing to delete."
+            exit 0
+          fi
+
+          echo "Deleting temporary branch: ${BRANCH}"
+          git push origin --delete "${BRANCH}" || echo "Branch delete failed (maybe already gone)."
+
+  go-get-overall:
+    name: go-get-overall
+    needs: go-get-test
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Fail if any go-get-test job failed
+        run: |
+          set -euo pipefail
+          
+          RESULT="${{ needs.go-get-test.result }}"
+          echo "go-get-test result: ${RESULT}"
+          
+          if [ "${RESULT}" != "success" ]; then
+            echo "One or more go-get-test matrix jobs failed."
+            exit 1
+          fi
+          
+          echo "All go-get-test matrix jobs succeeded."
