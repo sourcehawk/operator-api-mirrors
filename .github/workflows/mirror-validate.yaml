@@ -47,12 +47,7 @@ jobs:
           echo "branch_name=${BRANCH}" >> "$GITHUB_OUTPUT"
 
       - name: Run mirrorer (regenerate mirrors)
-        run: |
-          set -euo pipefail
-          go run ./cmd/api-mirrorer/main.go \
-            -rootModuleName github.com/sourcehawk/operator-api-mirror \
-            -mirrorsPath ./mirrors \
-            -config ./operators.yaml
+        run: make mirror
 
       - name: Commit mirrors (if any changes) and capture SHA
         id: commit-mirrors

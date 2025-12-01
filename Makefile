@@ -11,7 +11,7 @@ SHELL = /usr/bin/env bash -o pipefail
 .SHELLFLAGS = -ec
 
 .PHONY: all
-all: fmt vet test build
+all: mirror
 
 ##@ General
 
@@ -30,32 +30,12 @@ all: fmt vet test build
 help: ## Display this help.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_0-9-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
-##@ Development
-
-.PHONY: fmt
-fmt: ## Run go fmt against code.
-	go fmt ./pkg
-	go fmt cmd/api-mirrorer/main.go
-
-.PHONY: vet
-vet: ## Run go vet against code.
-	go vet ./pkg
-	go vet cmd/api-mirrorer/main.go
-
-.PHONY: lint
-lint: golangci-lint ## Run golangci-lint linter
-	golangci-lint run
-
-.PHONY: test
-test:
-	go test ./pkg
-
 ##@ Build
 
-.PHONY: build
-build: ## Build the operator-api-mirror binary
-	go build -o api-mirrorer cmd/api-mirrorer/main.go
+MIRRORER_VERSION ?= v0.1.0
 
 .PHONY: mirror
-mirror: build ## Run the mirrorer
-	go run ./cmd/api-mirrorer/main.go $(ARGS)
+mirror:  ## Run the mirrorer
+	go install github.com/sourcehawk/operator-api-mirrorer/cmd/mirrorer@$(MIRRORER_VERSION)
+	mirrorer -config="operators.yaml" -mirrorsPath="./mirrors" -gitRepo="github.com/sourcehawk/operator-api-mirrors"
+

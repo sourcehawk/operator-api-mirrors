@@ -27,11 +27,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Run mirrorer (regenerate mirrors on main)
-        run: |
-          go run ./cmd/api-mirrorer/main.go \
-            -rootModuleName github.com/sourcehawk/operator-api-mirror \
-            -mirrorsPath ./mirrors \
-            -config ./operators.yaml
+        run: make mirror
 
       - name: Commit mirrors (if any changes)
         run: |
