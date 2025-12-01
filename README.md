@@ -6,7 +6,7 @@ This repository contains **standalone, version-pinned Go modules** extracted fro
 Each operator version is published as a **reproducible, self-contained Go module** under:
 
 ```
-mirrors/<operator>/<version>/
+mirrors/<operator>/
 ```
 
 These modules include:
@@ -49,26 +49,20 @@ Ideal for use in controllers or API clients that need operator CRD Go types with
 
 ```
 mirrors/
+  │
   ├── otel-operator/
-  │   └── v0.140.0/
-  │       ├── apis/
-  │       ├── internal/
-  │       ├── pkg/
-  │       └── go.mod
+  │    ├── apis/
+  │    ├── internal/
+  │    ├── pkg/
+  │    └── go.mod
+  │
   └── eck-operator/
-      └── v3.2.0/
-          ├── pkg/apis/elasticsearch/
-          ├── internal/
-          └── go.mod
+      ├── pkg/apis/elasticsearch/
+      ├── internal/
+      └── go.mod
 ```
 
-Each version directory is a **complete Go module**.
-
-You can import mirrored APIs like:
-
-```go
-import "github.com/sourcehawk/operator-api-mirrors/mirrors/otel-operator/v0.140.0/apis/v1beta1"
-```
+Each directory is a **standalone Go module**.
 
 ---
 
@@ -87,9 +81,9 @@ The mirrorer tool:
 5. Builds a fresh `go.mod`.
 6. Applies replace-overrides (e.g. to pin Kubernetes versions).
 7. Runs `go mod tidy`.
-8. Writes the result into this repository under `mirrors/<slug>/<version>/`.
+8. Writes the result into this repository under `mirrors/<slug>/`.
 
-This repository **does not contain the mirroring logic**—only the generated modules.
+This repository **does not contain the mirroring logic**, only the generated modules.
 
 ---
 
