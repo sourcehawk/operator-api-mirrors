@@ -115,7 +115,8 @@ type ObjectSelector struct {
 	ServiceName string `json:"serviceName,omitempty"`
 
 	// SecretName is the name of an existing Kubernetes secret that contains connection information for associating an
-	// Elastic resource not managed by the operator. The referenced secret must contain the following:
+	// Elastic resource not managed by the operator.
+	// The referenced secret must contain the following:
 	// - `url`: the URL to reach the Elastic resource
 	// - `username`: the username of the user to be authenticated to the Elastic resource
 	// - `password`: the password of the user to be authenticated to the Elastic resource
@@ -273,6 +274,14 @@ type PodDisruptionBudgetTemplate struct {
 // IsDisabled returns true if the PodDisruptionBudget is explicitly disabled (not nil, but empty).
 func (p *PodDisruptionBudgetTemplate) IsDisabled() bool {
 	return reflect.DeepEqual(p, &PodDisruptionBudgetTemplate{})
+}
+
+// IsSpecified returns true if the PodDisruptionBudget is specified (not nil, and has a non-empty spec).
+func (p *PodDisruptionBudgetTemplate) IsSpecified() bool {
+	return p != nil && (p.Spec.Selector != nil ||
+		p.Spec.MinAvailable != nil ||
+		p.Spec.MaxUnavailable != nil ||
+		p.Spec.UnhealthyPodEvictionPolicy != nil)
 }
 
 // NamespacedSecretSource defines a data source based on a Kubernetes Secret in a given namespace.

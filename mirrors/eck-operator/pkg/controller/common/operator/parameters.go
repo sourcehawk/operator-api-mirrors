@@ -12,6 +12,7 @@ import (
 
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/about"
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/common/certificates"
+	commonpassword "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/common/password"
 	esvalidation "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/elasticsearch/validation"
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/utils/cryptutil"
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/utils/net"
@@ -31,6 +32,8 @@ type Parameters struct {
 	Dialer net.Dialer
 	// PasswordHasher is the password hash generator used by the operator.
 	PasswordHasher cryptutil.PasswordHasher
+	// PasswordGenerator is the password generator used by the operator according to the license level.
+	PasswordGenerator commonpassword.RandomGenerator
 	// IPFamily represents the IP family to use when creating configuration and services.
 	IPFamily corev1.IPFamily
 	// GlobalCA is an optionally configured, globally shared CA to be used for all managed resources.

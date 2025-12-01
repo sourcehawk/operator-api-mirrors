@@ -9,7 +9,7 @@ operators:
 
 - slug: eck-operator
   repo: github.com/elastic/cloud-on-k8s
-  currentVersion: v3.1.0
+  currentVersion: v3.2.0
   goModPath: go.mod
   apiPaths:
   - "pkg/apis/elasticsearch/*"
