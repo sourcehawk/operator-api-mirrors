@@ -1,7 +1,7 @@
 operators:
 - slug: otel-operator
   repo: github.com/open-telemetry/opentelemetry-operator
-  currentVersion: v0.138.0
+  currentVersion: v0.139.0
   goModPath: go.mod
   apiPaths:
   - "apis/*"
