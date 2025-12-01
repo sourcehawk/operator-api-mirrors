@@ -19,7 +19,7 @@
       "matchFiles": ["operators.yaml"],
       "automerge": true,
       "automergeType": "pr",
-      "platformAutomerge": true,
+      "platformAutomerge": false,
       "requiredStatusChecks": [
         "Test Mirror APIs (PR) / mirror-test"
       ]
