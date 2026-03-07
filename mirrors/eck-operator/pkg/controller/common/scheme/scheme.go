@@ -15,6 +15,7 @@ import (
 	agentv1alpha1 "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/apis/agent/v1alpha1"
 	apmv1 "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/apis/apm/v1"
 	apmv1beta1 "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/apis/apm/v1beta1"
+	autoopsv1alpha1 "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/apis/autoops/v1alpha1"
 	easv1alpha1 "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/apis/autoscaling/v1alpha1"
 	beatv1beta1 "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/apis/beat/v1beta1"
 	commonv1 "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/apis/common/v1"
@@ -26,6 +27,7 @@ import (
 	kbv1 "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/apis/kibana/v1"
 	kbv1beta1 "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/apis/kibana/v1beta1"
 	emsv1alpha1 "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/apis/maps/v1alpha1"
+	packageregistryv1alpha1 "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/apis/packageregistry/v1alpha1"
 	policyv1alpha1 "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/apis/stackconfigpolicy/v1alpha1"
 )
 
@@ -56,7 +58,9 @@ func SetupScheme() {
 		beatv1beta1.AddToScheme,
 		agentv1alpha1.AddToScheme,
 		emsv1alpha1.AddToScheme,
+		packageregistryv1alpha1.AddToScheme,
 		policyv1alpha1.AddToScheme,
+		autoopsv1alpha1.AddToScheme,
 		logstashv1alpha1.AddToScheme,
 	}
 	mustAddSchemeOnce(&addToScheme, schemes)
