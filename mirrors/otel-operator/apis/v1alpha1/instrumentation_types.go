@@ -371,8 +371,7 @@ type Nginx struct {
 }
 
 // InstrumentationStatus defines status of the instrumentation.
-type InstrumentationStatus struct {
-}
+type InstrumentationStatus struct{}
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:shortName=otelinst;otelinsts
@@ -399,8 +398,4 @@ type InstrumentationList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []Instrumentation `json:"items"`
-}
-
-func init() {
-	SchemeBuilder.Register(&Instrumentation{}, &InstrumentationList{})
 }
