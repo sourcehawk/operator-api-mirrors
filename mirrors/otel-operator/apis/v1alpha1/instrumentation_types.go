@@ -74,6 +74,16 @@ type InstrumentationSpec struct {
 	// Defaults to Always if :latest tag is specified, or IfNotPresent otherwise.
 	// +optional
 	ImagePullPolicy corev1.PullPolicy `json:"imagePullPolicy,omitempty"`
+
+	// InitContainerSecurityContext applied to the auto-instrumentation init
+	// containers created for Java, NodeJS, Python, DotNet, Apache HTTPD and
+	// Nginx. When unset, init containers inherit the security context of the
+	// first application container being instrumented (existing behavior). The
+	// Go auto-instrumentation sidecar is intentionally excluded — its security
+	// requirements (eBPF) differ from the init-container languages and are
+	// configured via `spec.go.securityContext`.
+	// +optional
+	InitContainerSecurityContext *corev1.SecurityContext `json:"initContainerSecurityContext,omitempty"`
 }
 
 // Resource defines the configuration for the resource attributes, as defined by the OpenTelemetry specification.
@@ -163,6 +173,7 @@ type Java struct {
 
 	// VolumeSizeLimit defines size limit for volume used for auto-instrumentation.
 	// The default size is 200Mi.
+	//
 	// Deprecated: use spec.<lang>.volume.size instead. This field will be inactive in a future release.
 	VolumeSizeLimit *resource.Quantity `json:"volumeLimitSize,omitempty"`
 
@@ -202,6 +213,7 @@ type NodeJS struct {
 
 	// VolumeSizeLimit defines size limit for volume used for auto-instrumentation.
 	// The default size is 200Mi.
+	//
 	// Deprecated: use spec.<lang>.volume.size instead. This field will be inactive in a future release.
 	VolumeSizeLimit *resource.Quantity `json:"volumeLimitSize,omitempty"`
 
@@ -228,6 +240,7 @@ type Python struct {
 
 	// VolumeSizeLimit defines size limit for volume used for auto-instrumentation.
 	// The default size is 200Mi.
+	//
 	// Deprecated: use spec.<lang>.volume.size instead. This field will be inactive in a future release.
 	VolumeSizeLimit *resource.Quantity `json:"volumeLimitSize,omitempty"`
 
@@ -254,6 +267,7 @@ type DotNet struct {
 
 	// VolumeSizeLimit defines size limit for volume used for auto-instrumentation.
 	// The default size is 200Mi.
+	//
 	// Deprecated: use spec.<lang>.volume.size instead. This field will be inactive in a future release.
 	VolumeSizeLimit *resource.Quantity `json:"volumeLimitSize,omitempty"`
 
@@ -278,6 +292,7 @@ type Go struct {
 
 	// VolumeSizeLimit defines size limit for volume used for auto-instrumentation.
 	// The default size is 200Mi.
+	//
 	// Deprecated: use spec.<lang>.volume.size instead. This field will be inactive in a future release.
 	VolumeSizeLimit *resource.Quantity `json:"volumeLimitSize,omitempty"`
 
@@ -290,6 +305,13 @@ type Go struct {
 	// Resources describes the compute resource requirements.
 	// +optional
 	Resources corev1.ResourceRequirements `json:"resourceRequirements,omitempty"`
+
+	// SecurityContext applied to the Go auto-instrumentation sidecar. If unset,
+	// the sidecar runs with the hardcoded defaults required for eBPF tracing
+	// (Privileged: true, RunAsUser: 0). Override with care — the sidecar needs
+	// access to /sys/kernel/debug to attach uprobes.
+	// +optional
+	SecurityContext *corev1.SecurityContext `json:"securityContext,omitempty"`
 }
 
 // ApacheHttpd defines Apache SDK and instrumentation configuration.
@@ -304,6 +326,7 @@ type ApacheHttpd struct {
 
 	// VolumeSizeLimit defines size limit for volume used for auto-instrumentation.
 	// The default size is 200Mi.
+	//
 	// Deprecated: use spec.<lang>.volume.size instead. This field will be inactive in a future release.
 	VolumeSizeLimit *resource.Quantity `json:"volumeLimitSize,omitempty"`
 
@@ -324,8 +347,10 @@ type ApacheHttpd struct {
 	Version string `json:"version,omitempty"`
 
 	// Location of Apache HTTPD server configuration.
-	// Needed only if different from default "/usr/local/apache2/conf"
+	// Needed only if different from default "/usr/local/apache2/conf".
 	// +optional
+	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9._/-]*$`
+	// +kubebuilder:validation:MaxLength=256
 	ConfigPath string `json:"configPath,omitempty"`
 
 	// Resources describes the compute resource requirements.
@@ -345,6 +370,7 @@ type Nginx struct {
 
 	// VolumeSizeLimit defines size limit for volume used for auto-instrumentation.
 	// The default size is 200Mi.
+	//
 	// Deprecated: use spec.<lang>.volume.size instead. This field will be inactive in a future release.
 	VolumeSizeLimit *resource.Quantity `json:"volumeLimitSize,omitempty"`
 
@@ -361,8 +387,10 @@ type Nginx struct {
 	Attrs []corev1.EnvVar `json:"attrs,omitempty"`
 
 	// Location of Nginx configuration file.
-	// Needed only if different from default "/etx/nginx/nginx.conf"
+	// Needed only if different from default "/etx/nginx/nginx.conf".
 	// +optional
+	// +kubebuilder:validation:Pattern=`^[A-Za-z0-9._/-]*$`
+	// +kubebuilder:validation:MaxLength=256
 	ConfigFile string `json:"configFile,omitempty"`
 
 	// Resources describes the compute resource requirements.
@@ -371,7 +399,14 @@ type Nginx struct {
 }
 
 // InstrumentationStatus defines status of the instrumentation.
-type InstrumentationStatus struct{}
+type InstrumentationStatus struct {
+	// UpgradeBlockedVersions contains instrumentation language images whose
+	// versions could not be automatically upgraded, mapped to a message
+	// explaining why. The operator will not auto-upgrade these images until
+	// the user manually changes them to a supported version.
+	// +optional
+	UpgradeBlockedVersions map[string]string `json:"upgradeBlockedVersions,omitempty"`
+}
 
 // +kubebuilder:object:root=true
 // +kubebuilder:resource:shortName=otelinst;otelinsts

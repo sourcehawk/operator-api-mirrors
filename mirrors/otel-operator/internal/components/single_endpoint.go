@@ -26,11 +26,6 @@ type SingleEndpointConfig struct {
 	TLS           *TLSConfig `mapstructure:"tls,omitempty"`
 }
 
-type TLSConfig struct {
-	Ciphers    []string `mapstructure:"cipher_suites,omitempty"`
-	MinVersion string   `mapstructure:"min_version,omitempty"`
-}
-
 func (g *SingleEndpointConfig) GetPortNumOrDefault(logger logr.Logger, p int32) int32 {
 	num, err := g.GetPortNum()
 	if err != nil {
@@ -43,9 +38,9 @@ func (g *SingleEndpointConfig) GetPortNumOrDefault(logger logr.Logger, p int32) 
 // GetPortNum attempts to get the port for the given config. If it cannot, the UnsetPort and the given missingPortError
 // are returned.
 func (g *SingleEndpointConfig) GetPortNum() (int32, error) {
-	if len(g.Endpoint) > 0 {
+	if g.Endpoint != "" {
 		return PortFromEndpoint(g.Endpoint)
-	} else if len(g.ListenAddress) > 0 {
+	} else if g.ListenAddress != "" {
 		return PortFromEndpoint(g.ListenAddress)
 	}
 	return UnsetPort, PortNotFoundErr
@@ -101,14 +96,7 @@ func AddressDefaulter(_ logr.Logger, defaultCfg *DefaultConfig, defaultRecAddr s
 	}
 
 	res := make(map[string]any)
-	if defaultCfg != nil && defaultCfg.TLSProfile != nil && config.TLS != nil {
-		if config.TLS.MinVersion == "" && defaultCfg.TLSProfile.MinTLSVersionOTEL() != "" {
-			config.TLS.MinVersion = defaultCfg.TLSProfile.MinTLSVersionOTEL()
-		}
-		if config.TLS.Ciphers == nil && len(defaultCfg.TLSProfile.CipherSuiteNames()) > 0 {
-			config.TLS.Ciphers = defaultCfg.TLSProfile.CipherSuiteNames()
-		}
-	}
+	config.TLS.ApplyTLSProfileDefaults(defaultCfg.TLSProfile)
 
 	err := mapstructure.Decode(config, &res)
 	return res, err

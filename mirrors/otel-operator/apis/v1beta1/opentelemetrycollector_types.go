@@ -101,6 +101,11 @@ type OpenTelemetryCollectorSpec struct {
 	// Valid modes are: deployment, daemonset and statefulset.
 	// +optional
 	Ingress Ingress `json:"ingress,omitempty"`
+	// HttpRoute is used to specify how OpenTelemetry Collector is exposed via Gateway API HTTPRoute.
+	// This functionality is only available if one of the valid modes is set.
+	// Valid modes are: deployment, daemonset and statefulset.
+	// +optional
+	HttpRoute HttpRouteConfig `json:"httpRoute,omitempty"`
 	// NetworkPolicy defines the network policy to be applied to the OpenTelemetry Collector pods.
 	// +optional
 	NetworkPolicy NetworkPolicy `json:"networkPolicy,omitempty"`
@@ -168,7 +173,7 @@ type TargetAllocatorEmbedded struct {
 	// +kubebuilder:default:=relabel-config
 	FilterStrategy TargetAllocatorFilterStrategy `json:"filterStrategy,omitempty"`
 	// ServiceAccount indicates the name of an existing service account to use with this instance. When set,
-	// the operator will not automatically create a ServiceAccount for the TargetAllocator.
+	// the operator will not automatically Create a ServiceAccount for the TargetAllocator.
 	// +optional
 	ServiceAccount string `json:"serviceAccount,omitempty"`
 	// Image indicates the container image to use for the OpenTelemetry TargetAllocator.
