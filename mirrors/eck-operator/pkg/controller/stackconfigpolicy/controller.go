@@ -19,7 +19,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/client-go/tools/record"
+	toolsevents "k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
@@ -77,7 +77,7 @@ func newReconciler(mgr manager.Manager, params operator.Parameters) *ReconcileSt
 	return &ReconcileStackConfigPolicy{
 		Client:           k8sClient,
 		esClientProvider: commonesclient.NewClient,
-		recorder:         mgr.GetEventRecorderFor(controllerName),
+		recorder:         mgr.GetEventRecorder(controllerName),
 		licenseChecker:   license.NewLicenseChecker(k8sClient, params.OperatorNamespace),
 		params:           params,
 		dynamicWatches:   watches.NewDynamicWatches(),
@@ -111,25 +111,31 @@ func addWatches(mgr manager.Manager, c controller.Controller, r *ReconcileStackC
 
 func reconcileRequestForSoftOwnerPolicy() handler.TypedEventHandler[*corev1.Secret, reconcile.Request] {
 	return handler.TypedEnqueueRequestsFromMapFunc[*corev1.Secret](func(ctx context.Context, secret *corev1.Secret) []reconcile.Request {
-		softOwners, err := reconciler.SoftOwnerRefs(secret)
-		if err != nil {
-			ulog.Log.Error(err, "Fail to get soft-owner policies of secret", "secret_name", secret.GetName(), "secret_namespace", secret.GetNamespace())
-			return nil
-		}
-
-		if len(softOwners) == 0 {
-			return nil
-		}
-
-		requests := make([]reconcile.Request, len(softOwners))
-		for idx, nsn := range softOwners {
-			if nsn.Kind != policyv1alpha1.Kind {
-				continue
-			}
-			requests[idx] = reconcile.Request{NamespacedName: types.NamespacedName{Namespace: nsn.Namespace, Name: nsn.Name}}
-		}
-		return requests
+		return toReconcileRequests(secret)
 	})
+}
+
+// toReconcileRequests returns reconcile requests for StackConfigPolicy owners of the given secret.
+// Returns nil if the secret has no soft owners or if none of the owners are StackConfigPolicy resources.
+func toReconcileRequests(secret *corev1.Secret) []reconcile.Request {
+	softOwners, err := reconciler.SoftOwnerRefs(secret)
+	if err != nil {
+		ulog.Log.Error(err, "Fail to get soft-owner policies of secret", "secret_name", secret.GetName(), "secret_namespace", secret.GetNamespace())
+		return nil
+	}
+
+	if len(softOwners) == 0 {
+		return nil
+	}
+
+	var requests []reconcile.Request
+	for _, nsn := range softOwners {
+		if nsn.Kind != policyv1alpha1.Kind {
+			continue
+		}
+		requests = append(requests, reconcile.Request{NamespacedName: types.NamespacedName{Namespace: nsn.Namespace, Name: nsn.Name}})
+	}
+	return requests
 }
 
 // requestsAllStackConfigPolicies returns the requests to reconcile all StackConfigPolicy resources.
@@ -142,20 +148,19 @@ func reconcileRequestForAllPolicies(clnt k8s.Client) handler.TypedEventHandler[c
 		}
 		requests := make([]reconcile.Request, 0)
 		for _, stackConfig := range stackConfigList.Items {
-			stackConfig := stackConfig
 			requests = append(requests, reconcile.Request{NamespacedName: k8s.ExtractNamespacedName(&stackConfig)})
 		}
 		return requests
 	})
 }
 
-var _ reconcile.Reconciler = &ReconcileStackConfigPolicy{}
+var _ reconcile.Reconciler = (*ReconcileStackConfigPolicy)(nil)
 
 // ReconcileStackConfigPolicy reconciles a StackConfigPolicy object
 type ReconcileStackConfigPolicy struct {
 	k8s.Client
 	esClientProvider commonesclient.Provider
-	recorder         record.EventRecorder
+	recorder         toolsevents.EventRecorder
 	licenseChecker   license.Checker
 	params           operator.Parameters
 	dynamicWatches   watches.DynamicWatches
@@ -230,16 +235,16 @@ func (r *ReconcileStackConfigPolicy) doReconcile(ctx context.Context, reconcilin
 		return results.WithError(err), status
 	}
 	if !enabled {
-		msg := "StackConfigPolicy is an enterprise feature. Enterprise features are disabled"
+		const msg = "StackConfigPolicy is an enterprise feature. Enterprise features are disabled"
 		log.Info(msg)
-		r.recorder.Eventf(&reconcilingPolicy, corev1.EventTypeWarning, events.EventReconciliationError, msg)
+		k8s.EmitEvent(r.recorder, &reconcilingPolicy, corev1.EventTypeWarning, events.EventReconciliationError, events.EventActionLicenseCheck, msg)
 		// we don't have a good way of watching for the license level to change so just requeue with a reasonably long delay
 		return results.WithRequeue(5 * time.Minute), status
 	}
 	// run validation in case the webhook is disabled
 	if err := r.validate(ctx, &reconcilingPolicy); err != nil {
 		status.Phase = policyv1alpha1.InvalidPhase
-		r.recorder.Eventf(&reconcilingPolicy, corev1.EventTypeWarning, events.EventReasonValidation, err.Error())
+		k8s.EmitEvent(r.recorder, &reconcilingPolicy, corev1.EventTypeWarning, events.EventReasonValidation, events.EventActionValidation, err.Error())
 		return results.WithError(err), status
 	}
 
@@ -310,7 +315,7 @@ func (r *ReconcileStackConfigPolicy) reconcileElasticsearchResources(ctx context
 		}
 		if v.LT(filesettings.FileBasedSettingsMinPreVersion) {
 			err = fmt.Errorf("invalid version to configure resource Elasticsearch %s/%s: actual %s, expected >= %s", es.Namespace, es.Name, v, filesettings.FileBasedSettingsMinVersion)
-			r.recorder.Eventf(&reconcilingPolicy, corev1.EventTypeWarning, events.EventReasonUnexpected, err.Error())
+			k8s.EmitEvent(r.recorder, &reconcilingPolicy, corev1.EventTypeWarning, events.EventReasonUnexpected, events.EventActionVersionCheck, err.Error())
 			results.WithError(err)
 			err = status.AddPolicyErrorFor(esNsn, policyv1alpha1.ErrorPhase, err.Error(), policyv1alpha1.ElasticsearchResourceType)
 			if err != nil {
@@ -354,7 +359,7 @@ func (r *ReconcileStackConfigPolicy) reconcileElasticsearchResources(ctx context
 			return results.WithError(err), status
 		}
 
-		if err := filesettings.ReconcileSecret(ctx, r.Client, expectedSecret, &es); err != nil {
+		if err := filesettings.ReconcileFileSettingsSecret(ctx, r.Client, expectedSecret, &es); err != nil {
 			return results.WithError(err), status
 		}
 
@@ -382,7 +387,7 @@ func (r *ReconcileStackConfigPolicy) reconcileElasticsearchResources(ctx context
 			return results.WithError(err), status
 		}
 
-		if err = filesettings.ReconcileSecret(ctx, r.Client, expectedConfigSecret, &es); err != nil {
+		if err = filesettings.ReconcileESConfigSecret(ctx, r.Client, expectedConfigSecret, &es); err != nil {
 			return results.WithError(err), status
 		}
 
@@ -481,7 +486,7 @@ func (r *ReconcileStackConfigPolicy) reconcileKibanaResources(ctx context.Contex
 				return results.WithError(err), status
 			}
 
-			if err = filesettings.ReconcileSecret(ctx, r.Client, expectedConfigSecret, &kibana); err != nil {
+			if err = filesettings.ReconcileKibanaConfigSecret(ctx, r.Client, expectedConfigSecret, &kibana); err != nil {
 				return results.WithError(err), status
 			}
 		}
@@ -527,7 +532,7 @@ var (
 func cleanStackTrace(errors []string) string {
 	for i, e := range errors {
 		var msg []string
-		for _, line := range strings.Split(e, "\n") {
+		for line := range strings.SplitSeq(e, "\n") {
 			if matchTabsAtSpaces.MatchString(line) || matchTripleDotsNumberMore.MatchString(line) {
 				continue
 			}
@@ -542,10 +547,14 @@ func (r *ReconcileStackConfigPolicy) validate(ctx context.Context, policy *polic
 	span, vctx := apm.StartSpan(ctx, "validate", tracing.SpanTypeApp)
 	defer span.End()
 
-	if _, err := policy.ValidateCreate(); err != nil {
+	warnings, err := policyv1alpha1.Validate(policy, nil)
+	if err != nil {
 		ulog.FromContext(ctx).Error(err, "Validation failed")
-		k8s.MaybeEmitErrorEvent(r.recorder, err, policy, events.EventReasonValidation, err.Error())
+		k8s.MaybeEmitErrorEvent(r.recorder, err, policy, events.EventReasonValidation, events.EventActionValidation, err.Error())
 		return tracing.CaptureError(vctx, err)
+	}
+	for _, warning := range warnings {
+		k8s.EmitEvent(r.recorder, policy, corev1.EventTypeWarning, events.EventReasonValidation, events.EventActionValidation, warning)
 	}
 
 	return nil
@@ -559,7 +568,7 @@ func (r *ReconcileStackConfigPolicy) updateStatus(ctx context.Context, scp polic
 		return nil // nothing to do
 	}
 	if status.IsDegraded(scp.Status) {
-		r.recorder.Event(&scp, corev1.EventTypeWarning, events.EventReasonUnhealthy, "StackConfigPolicy health degraded")
+		k8s.EmitEvent(r.recorder, &scp, corev1.EventTypeWarning, events.EventReasonUnhealthy, events.EventActionStatusUpdate, "StackConfigPolicy health degraded")
 	}
 	ulog.FromContext(ctx).V(1).Info("Updating status",
 		"iteration", atomic.LoadUint64(&r.iteration),
@@ -663,7 +672,7 @@ func resetOrphanSoftOwnedFileSettingSecrets(
 					return err
 				}
 			} else {
-				if err := filesettings.ReconcileSecret(ctx, c, s, &es); err != nil && !apierrors.IsNotFound(err) {
+				if err := filesettings.ReconcileFileSettingsSecret(ctx, c, s, &es); err != nil && !apierrors.IsNotFound(err) {
 					return err
 				}
 			}
@@ -788,8 +797,16 @@ func deleteOrphanSoftOwnedSecrets(
 			if err != nil && !apierrors.IsNotFound(err) {
 				return err
 			}
-		} else {
-			if err := filesettings.ReconcileSecret(ctx, c, secret, ownerObject); err != nil && !apierrors.IsNotFound(err) {
+			continue
+		}
+
+		switch configuredApplicationType {
+		case eslabel.Type:
+			if err := filesettings.ReconcileESConfigSecret(ctx, c, secret, ownerObject); err != nil && !apierrors.IsNotFound(err) {
+				return err
+			}
+		case kblabel.Type:
+			if err := filesettings.ReconcileKibanaConfigSecret(ctx, c, secret, ownerObject); err != nil && !apierrors.IsNotFound(err) {
 				return err
 			}
 		}

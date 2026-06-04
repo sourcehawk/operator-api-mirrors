@@ -74,6 +74,11 @@ type LocalObjectSelector struct {
 	ServiceName string `json:"serviceName,omitempty"`
 }
 
+// GetClientCertificateSecretName always returns empty string as LocalObjectSelector does not support client certificates.
+func (o LocalObjectSelector) GetClientCertificateSecretName() string {
+	return ""
+}
+
 // WithDefaultNamespace adds a default namespace to a given LocalObjectSelector if none is set.
 func (o LocalObjectSelector) WithDefaultNamespace(defaultNamespace string) LocalObjectSelector {
 	if len(o.Namespace) > 0 {
@@ -86,7 +91,7 @@ func (o LocalObjectSelector) WithDefaultNamespace(defaultNamespace string) Local
 	}
 }
 
-// NamespacedName is a convenience method to turn an LocalObjectSelector into a NamespacedName.
+// NamespacedName is a convenience method to turn a LocalObjectSelector into a NamespacedName.
 func (o LocalObjectSelector) NamespacedName() types.NamespacedName {
 	return types.NamespacedName{
 		Name:      o.Name,
@@ -96,8 +101,60 @@ func (o LocalObjectSelector) NamespacedName() types.NamespacedName {
 
 // IsDefined checks if the local object selector is not nil and has a name.
 // Namespace is not mandatory as it may be inherited by the parent object.
+//
+// Deprecated: Use IsSet instead.
 func (o *LocalObjectSelector) IsDefined() bool {
-	return o != nil && o.Name != ""
+	if o == nil {
+		return false
+	}
+	return o.IsSet()
+}
+
+// IsSet checks if the local object selector has a name.
+// Namespace is not mandatory as it may be inherited by the parent object.
+func (o LocalObjectSelector) IsSet() bool {
+	return o.Name != ""
+}
+
+// NameOrSecretName returns the name. LocalObjectSelector does not support external references.
+func (o LocalObjectSelector) NameOrSecretName() string {
+	return o.Name
+}
+
+// IsExternal always returns false as LocalObjectSelector does not support external references.
+func (o LocalObjectSelector) IsExternal() bool {
+	return false
+}
+
+// GetName returns the name of the LocalObjectSelector.
+func (o LocalObjectSelector) GetName() string {
+	return o.Name
+}
+
+// GetNamespace returns the namespace of the LocalObjectSelector.
+func (o LocalObjectSelector) GetNamespace() string {
+	return o.Namespace
+}
+
+// GetSecretName always returns empty string as LocalObjectSelector does not support external references.
+func (o LocalObjectSelector) GetSecretName() string {
+	return ""
+}
+
+// GetServiceName returns the service name of the LocalObjectSelector.
+func (o LocalObjectSelector) GetServiceName() string {
+	return o.ServiceName
+}
+
+// IsValid validates the LocalObjectSelector.
+func (o LocalObjectSelector) IsValid() error {
+	if o.Name == "" && o.ServiceName != "" {
+		return errors.New("serviceName can only be used in combination with name")
+	}
+	if o.Name == "" && o.Namespace != "" {
+		return errors.New("namespace can only be used in combination with name")
+	}
+	return nil
 }
 
 // ObjectSelector defines a reference to a Kubernetes object which can be an Elastic resource managed by the operator
@@ -124,6 +181,11 @@ type ObjectSelector struct {
 	// - `api-key`: the key to authenticate against the Elastic resource instead of a username and password (supported only for `elasticsearchRefs` in AgentSpec and in BeatSpec)
 	// This field cannot be used in combination with the other fields name, namespace or serviceName.
 	SecretName string `json:"secretName,omitempty"`
+}
+
+// GetClientCertificateSecretName always returns empty string as ObjectSelector does not support client certificates.
+func (o ObjectSelector) GetClientCertificateSecretName() string {
+	return ""
 }
 
 // WithDefaultNamespace adds a default namespace to a given ObjectSelector if none is set.
@@ -158,14 +220,44 @@ func (o ObjectSelector) NamespacedName() types.NamespacedName {
 
 // IsDefined checks if the object selector is not nil and has a name or a secret name.
 // Namespace is not mandatory as it may be inherited by the parent object.
+//
+// Deprecated: Use IsSet instead.
 func (o *ObjectSelector) IsDefined() bool {
-	return o != nil && o.NameOrSecretName() != ""
+	if o == nil {
+		return false
+	}
+	return o.IsSet()
 }
 
 // IsExternal returns true when the object selector references a Kubernetes secret describing an external
 // referenced object not managed by the operator.
 func (o ObjectSelector) IsExternal() bool {
-	return o.IsDefined() && o.SecretName != ""
+	return o.IsSet() && o.SecretName != ""
+}
+
+// IsSet checks if the object selector has a name or a secret name set.
+func (o ObjectSelector) IsSet() bool {
+	return o.NameOrSecretName() != ""
+}
+
+// GetName returns the name of the ObjectSelector.
+func (o ObjectSelector) GetName() string {
+	return o.Name
+}
+
+// GetNamespace returns the namespace of the ObjectSelector.
+func (o ObjectSelector) GetNamespace() string {
+	return o.Namespace
+}
+
+// GetSecretName returns the secret name of the ObjectSelector.
+func (o ObjectSelector) GetSecretName() string {
+	return o.SecretName
+}
+
+// GetServiceName returns the service name of the ObjectSelector.
+func (o ObjectSelector) GetServiceName() string {
+	return o.ServiceName
 }
 
 func (o ObjectSelector) IsValid() error {
@@ -192,6 +284,46 @@ func (o ObjectSelector) ToID() string {
 	return o.NameOrSecretName()
 }
 
+// ElasticsearchSelector defines a reference to an Elasticsearch cluster managed by the operator
+// or a Secret describing an external cluster not managed by the operator.
+type ElasticsearchSelector struct {
+	ObjectSelector `json:",inline"`
+
+	// ClientCertificateSecretName is the name of an existing Kubernetes secret containing a client certificate
+	// (tls.crt) and private key (tls.key) for client authentication to the referenced resource.
+	// This field is only relevant when the referenced Elasticsearch cluster has client authentication enabled.
+	// If not specified and the referenced resource requires client authentication, ECK will auto-generate a
+	// client certificate.
+	ClientCertificateSecretName string `json:"clientCertificateSecretName,omitempty"`
+}
+
+// GetClientCertificateSecretName returns the name of the client certificate secret.
+func (e ElasticsearchSelector) GetClientCertificateSecretName() string {
+	return e.ClientCertificateSecretName
+}
+
+// IsValid validates the ElasticsearchSelector, including the embedded ObjectSelector.
+func (e ElasticsearchSelector) IsValid() error {
+	if err := e.ObjectSelector.IsValid(); err != nil {
+		return err
+	}
+	if e.Name == "" && e.ClientCertificateSecretName != "" {
+		return errors.New("clientCertificateSecretName can only be used in combination with name")
+	}
+	return nil
+}
+
+// WithDefaultNamespace adds a default namespace to a given ElasticsearchSelector if none is set.
+func (e ElasticsearchSelector) WithDefaultNamespace(defaultNamespace string) ElasticsearchSelector {
+	if len(e.Namespace) > 0 {
+		return e
+	}
+	return ElasticsearchSelector{
+		ObjectSelector:              e.ObjectSelector.WithDefaultNamespace(defaultNamespace),
+		ClientCertificateSecretName: e.ClientCertificateSecretName,
+	}
+}
+
 // HTTPConfig holds the HTTP layer configuration for resources.
 type HTTPConfig struct {
 	// Service defines the template for the associated Kubernetes Service object.
@@ -202,6 +334,22 @@ type HTTPConfig struct {
 
 // Protocol returns the inferrred protocol (http or https) for this configuration.
 func (http HTTPConfig) Protocol() string {
+	if http.TLS.Enabled() {
+		return "https"
+	}
+	return "http"
+}
+
+// HTTPConfigWithClientOptions holds the HTTP layer configuration for resources.
+type HTTPConfigWithClientOptions struct {
+	// Service defines the template for the associated Kubernetes Service object.
+	Service ServiceTemplate `json:"service,omitempty"`
+	// TLS defines options for configuring TLS for HTTP.
+	TLS TLSWithClientOptions `json:"tls,omitempty"`
+}
+
+// Protocol returns the inferred protocol (http or https) for this configuration.
+func (http HTTPConfigWithClientOptions) Protocol() string {
 	if http.TLS.Enabled() {
 		return "https"
 	}
@@ -226,6 +374,25 @@ type TLSOptions struct {
 func (tls TLSOptions) Enabled() bool {
 	selfSigned := tls.SelfSignedCertificate
 	return selfSigned == nil || !selfSigned.Disabled || tls.Certificate.SecretName != ""
+}
+
+// TLSWithClientOptions extends TLSOptions with client authentication settings.
+type TLSWithClientOptions struct {
+	TLSOptions `json:",inline"`
+
+	// Client holds client configuration options.
+	Client ClientOptions `json:"client,omitempty"`
+}
+
+// Enabled returns true when TLS is enabled based on this option struct.
+func (tls TLSWithClientOptions) Enabled() bool {
+	return tls.TLSOptions.Enabled()
+}
+
+// ClientOptions configures client certificate authentication for incoming connections.
+type ClientOptions struct {
+	// Authentication enables client authentication (enterprise-only feature).
+	Authentication bool `json:"authentication,omitempty"`
 }
 
 // SelfSignedCertificate holds configuration for the self-signed certificate generated by the operator.

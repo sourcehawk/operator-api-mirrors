@@ -153,12 +153,12 @@ func (as *ApmServer) ElasticServiceAccount() (commonv1.ServiceAccountName, error
 func (as *ApmServer) GetAssociations() []commonv1.Association {
 	associations := make([]commonv1.Association, 0)
 
-	if as.Spec.ElasticsearchRef.IsDefined() {
+	if as.Spec.ElasticsearchRef.IsSet() {
 		associations = append(associations, &ApmEsAssociation{
 			ApmServer: as,
 		})
 	}
-	if as.Spec.KibanaRef.IsDefined() {
+	if as.Spec.KibanaRef.IsSet() {
 		associations = append(associations, &ApmKibanaAssociation{
 			ApmServer: as,
 		})
@@ -170,11 +170,11 @@ func (as *ApmServer) GetAssociations() []commonv1.Association {
 func (as *ApmServer) AssociationStatusMap(typ commonv1.AssociationType) commonv1.AssociationStatusMap {
 	switch typ {
 	case commonv1.ElasticsearchAssociationType:
-		if as.Spec.ElasticsearchRef.IsDefined() {
+		if as.Spec.ElasticsearchRef.IsSet() {
 			return commonv1.NewSingleAssociationStatusMap(as.Status.ElasticsearchAssociationStatus)
 		}
 	case commonv1.KibanaAssociationType:
-		if as.Spec.KibanaRef.IsDefined() {
+		if as.Spec.KibanaRef.IsSet() {
 			return commonv1.NewSingleAssociationStatusMap(as.Status.KibanaAssociationStatus)
 		}
 	}
@@ -210,7 +210,7 @@ type ApmEsAssociation struct {
 	*ApmServer
 }
 
-var _ commonv1.Association = &ApmEsAssociation{}
+var _ commonv1.Association = (*ApmEsAssociation)(nil)
 
 func NewApmEsAssociation(as *ApmServer) *ApmEsAssociation {
 	return &ApmEsAssociation{ApmServer: as}
@@ -234,7 +234,7 @@ func (aes *ApmEsAssociation) AssociationType() commonv1.AssociationType {
 	return commonv1.ElasticsearchAssociationType
 }
 
-func (aes *ApmEsAssociation) AssociationRef() commonv1.ObjectSelector {
+func (aes *ApmEsAssociation) AssociationRef() commonv1.AssociationRef {
 	return aes.Spec.ElasticsearchRef.WithDefaultNamespace(aes.Namespace)
 }
 
@@ -254,7 +254,7 @@ func (aes *ApmEsAssociation) AssociationID() string {
 	return commonv1.SingletonAssociationID
 }
 
-var _ commonv1.Association = &ApmKibanaAssociation{}
+var _ commonv1.Association = (*ApmKibanaAssociation)(nil)
 
 // ApmServer / Kibana association helper
 type ApmKibanaAssociation struct {
@@ -283,12 +283,12 @@ func (akb *ApmKibanaAssociation) AssociationType() commonv1.AssociationType {
 	return commonv1.KibanaAssociationType
 }
 
-func (akb *ApmKibanaAssociation) AssociationRef() commonv1.ObjectSelector {
+func (akb *ApmKibanaAssociation) AssociationRef() commonv1.AssociationRef {
 	return akb.Spec.KibanaRef.WithDefaultNamespace(akb.Namespace)
 }
 
 func (akb *ApmKibanaAssociation) RequiresAssociation() bool {
-	return akb.Spec.KibanaRef.IsDefined()
+	return akb.Spec.KibanaRef.IsSet()
 }
 
 func (akb *ApmKibanaAssociation) AssociationConf() (*commonv1.AssociationConf, error) {
@@ -307,4 +307,4 @@ func (akb *ApmKibanaAssociation) AssociationID() string {
 	return commonv1.SingletonAssociationID
 }
 
-var _ commonv1.Associated = &ApmServer{}
+var _ commonv1.Associated = (*ApmServer)(nil)

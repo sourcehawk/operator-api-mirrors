@@ -15,7 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
-	"k8s.io/client-go/tools/record"
+	toolsevents "k8s.io/client-go/tools/events"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	netutil "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/utils/net"
@@ -82,7 +82,7 @@ func IsPodRunning(pod corev1.Pod) bool {
 
 // TerminatingPods filters pods for Pods that are in the process of (graceful) termination.
 func TerminatingPods(pods []corev1.Pod) []corev1.Pod {
-	var terminating []corev1.Pod //nolint:prealloc
+	var terminating []corev1.Pod
 	for _, p := range pods {
 		if p.DeletionTimestamp.IsZero() {
 			continue
@@ -161,13 +161,28 @@ func GetServiceIPAddresses(svc corev1.Service) []net.IP {
 }
 
 // MaybeEmitErrorEvent emits an event if the error is report-worthy
-func MaybeEmitErrorEvent(r record.EventRecorder, err error, obj runtime.Object, reason, message string, args ...interface{}) {
+func MaybeEmitErrorEvent(r toolsevents.EventRecorder, err error, obj runtime.Object, reason, action, message string) {
+	MaybeEmitErrorEventf(r, err, obj, reason, action, "%s", message)
+}
+
+// MaybeEmitErrorEventf emits an event if the error is report-worthy with a format string and args
+func MaybeEmitErrorEventf(r toolsevents.EventRecorder, err error, obj runtime.Object, reason, action, message string, args ...any) {
 	// ignore nil errors and conflict issues
 	if err == nil || apierrors.IsConflict(err) {
 		return
 	}
 
-	r.Eventf(obj, corev1.EventTypeWarning, reason, message, args...)
+	r.Eventf(obj, nil, corev1.EventTypeWarning, reason, action, "%s", fmt.Sprintf(message, args...))
+}
+
+// EmitEvent emits an event with the given parameters
+func EmitEvent(r toolsevents.EventRecorder, obj runtime.Object, eventType, reason, action, message string) {
+	EmitEventf(r, obj, eventType, reason, action, "%s", message)
+}
+
+// EmitEventf emits an event with the given parameters
+func EmitEventf(r toolsevents.EventRecorder, obj runtime.Object, eventType, reason, action, message string, args ...any) {
+	r.Eventf(obj, nil, eventType, reason, action, "%s", fmt.Sprintf(message, args...))
 }
 
 // GetSecretEntry returns the value of the secret data for the given key, or nil.
@@ -211,20 +226,25 @@ func DeleteSecretMatching(ctx context.Context, c Client, opts ...client.ListOpti
 	return nil
 }
 
+// GetSecretIfExists returns the secret identified by key, or nil if it does not exist.
+func GetSecretIfExists(ctx context.Context, c Client, key types.NamespacedName) (*corev1.Secret, error) {
+	secret := &corev1.Secret{}
+	err := c.Get(ctx, key, secret)
+	if err != nil && apierrors.IsNotFound(err) {
+		return nil, nil
+	} else if err != nil {
+		return nil, err
+	}
+
+	return secret, nil
+}
+
 // DeleteSecretIfExists deletes the secret identified by key if exists.
 func DeleteSecretIfExists(ctx context.Context, c Client, key types.NamespacedName) error {
-	var secret corev1.Secret
-	err := c.Get(ctx, key, &secret)
-	if err != nil && apierrors.IsNotFound(err) {
-		return nil
-	} else if err != nil {
-		return err
-	}
-	err = c.Delete(ctx, &secret)
-	if err != nil && apierrors.IsNotFound(err) {
-		return nil
-	}
-	return err
+	return DeleteResourceIfExists(ctx, c, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{
+		Namespace: key.Namespace,
+		Name:      key.Name,
+	}})
 }
 
 // DeleteResourceIfExists deletes the provided resource if exists.
@@ -288,8 +308,8 @@ func CompareStorageRequests(initial corev1.VolumeResourceRequirements, updated c
 }
 
 // IsLabelSelectorEmpty returns true if the label selector has no match criteria.
-func IsLabelSelectorEmpty(selector metav1.LabelSelector) bool {
-	return len(selector.MatchExpressions) == 0 && len(selector.MatchLabels) == 0
+func IsLabelSelectorEmpty(selector *metav1.LabelSelector) bool {
+	return selector == nil || (len(selector.MatchExpressions) == 0 && len(selector.MatchLabels) == 0)
 }
 
 // NamespaceFilterFunc returns a function that checks if a namespace is allowed.
@@ -300,7 +320,7 @@ func NamespaceFilterFunc(
 	selector metav1.LabelSelector,
 ) (func(namespace string) bool, error) {
 	// No selector = pass everything through
-	if IsLabelSelectorEmpty(selector) {
+	if IsLabelSelectorEmpty(&selector) {
 		return func(string) bool { return true }, nil
 	}
 

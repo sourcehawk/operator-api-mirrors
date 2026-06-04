@@ -90,7 +90,7 @@ func (m *ElasticMapsServer) AssociationType() commonv1.AssociationType {
 	return commonv1.ElasticsearchAssociationType
 }
 
-func (m *ElasticMapsServer) AssociationRef() commonv1.ObjectSelector {
+func (m *ElasticMapsServer) AssociationRef() commonv1.AssociationRef {
 	return m.Spec.ElasticsearchRef.WithDefaultNamespace(m.Namespace)
 }
 
@@ -108,11 +108,11 @@ func (m *ElasticMapsServer) SetAssociationConf(assocConf *commonv1.AssociationCo
 
 // RequiresAssociation returns true if the spec specifies an Elasticsearch reference.
 func (m *ElasticMapsServer) RequiresAssociation() bool {
-	return m.Spec.ElasticsearchRef.IsDefined()
+	return m.Spec.ElasticsearchRef.IsSet()
 }
 
 func (m *ElasticMapsServer) AssociationStatusMap(typ commonv1.AssociationType) commonv1.AssociationStatusMap {
-	if typ == commonv1.ElasticsearchAssociationType && m.Spec.ElasticsearchRef.IsDefined() {
+	if typ == commonv1.ElasticsearchAssociationType && m.Spec.ElasticsearchRef.IsSet() {
 		return commonv1.NewSingleAssociationStatusMap(m.Status.AssociationStatus)
 	}
 
@@ -139,7 +139,7 @@ func (m *ElasticMapsServer) ElasticServiceAccount() (commonv1.ServiceAccountName
 
 func (m *ElasticMapsServer) GetAssociations() []commonv1.Association {
 	associations := make([]commonv1.Association, 0)
-	if m.Spec.ElasticsearchRef.IsDefined() {
+	if m.Spec.ElasticsearchRef.IsSet() {
 		associations = append(associations, m)
 	}
 	return associations
@@ -153,8 +153,8 @@ func (m *ElasticMapsServer) AssociationID() string {
 	return commonv1.SingletonAssociationID
 }
 
-var _ commonv1.Associated = &ElasticMapsServer{}
-var _ commonv1.Association = &ElasticMapsServer{}
+var _ commonv1.Associated = (*ElasticMapsServer)(nil)
+var _ commonv1.Association = (*ElasticMapsServer)(nil)
 
 // GetObservedGeneration will return the observed generation from the Elastic Maps status.
 func (m *ElasticMapsServer) GetObservedGeneration() int64 {
