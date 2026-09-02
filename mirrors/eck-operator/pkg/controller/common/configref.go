@@ -22,6 +22,7 @@ import (
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/common/events"
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/common/settings"
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/common/watches"
+	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/utils/k8s"
 )
 
 // ConfigRefWatchName returns the name of the watch registered on the secret referenced in `configRef`.
@@ -82,8 +83,8 @@ func ParseConfigRefToConfig(
 	}
 	data, exists := secret.Data[secretKey]
 	if !exists {
-		msg := fmt.Sprintf("unable to parse configRef secret %s/%s: missing key %s", namespace, configRef.SecretName, secretKey)
-		driver.Recorder().Event(resource, corev1.EventTypeWarning, events.EventReasonUnexpected, msg)
+		msg := fmt.Sprintf("unable to retrieve configRef secret %s/%s: missing key %s", namespace, configRef.SecretName, secretKey)
+		k8s.EmitEvent(driver.Recorder(), resource, corev1.EventTypeWarning, events.EventReasonUnexpected, events.EventActionGetSecret, msg)
 		return nil, errors.New(msg)
 	}
 
@@ -91,7 +92,7 @@ func ParseConfigRefToConfig(
 
 	if err != nil {
 		msg := fmt.Sprintf("unable to parse %s in configRef secret %s/%s", secretKey, namespace, configRef.SecretName)
-		driver.Recorder().Event(resource, corev1.EventTypeWarning, events.EventReasonUnexpected, msg)
+		k8s.EmitEvent(driver.Recorder(), resource, corev1.EventTypeWarning, events.EventReasonUnexpected, events.EventActionParseSecret, msg)
 		return nil, errors.Wrap(err, msg)
 	}
 	return parsed, nil
