@@ -32,6 +32,7 @@ var (
 		checkSupportedVersion,
 		checkMonitoring,
 		checkAssociations,
+		commonv1.PauseOrchestrationAnnotationCheck[*Kibana](),
 	}
 
 	updateChecks = []func(old, curr *Kibana) field.ErrorList{
@@ -56,6 +57,15 @@ func (k *Kibana) validate(old *Kibana) (admission.Warnings, error) {
 	}
 	if len(deprecatedWarnings) > 0 {
 		warnings = append(warnings, deprecatedWarnings)
+	}
+	if resourcesWarning := commonv1.PodTemplateResourcesOverrideWarning(
+		"spec.resources",
+		"spec.podTemplate",
+		KibanaContainerName,
+		k.Spec.Resources,
+		k.Spec.PodTemplate,
+	); resourcesWarning != "" {
+		warnings = append(warnings, resourcesWarning)
 	}
 
 	if old != nil {

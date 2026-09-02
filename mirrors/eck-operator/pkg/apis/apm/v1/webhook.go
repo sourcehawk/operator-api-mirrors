@@ -33,6 +33,7 @@ var (
 		checkSupportedVersion,
 		checkAgentConfigurationMinVersion,
 		checkAssociations,
+		commonv1.PauseOrchestrationAnnotationCheck[*ApmServer](),
 	}
 
 	updateChecks = []func(old, curr *ApmServer) field.ErrorList{
@@ -59,6 +60,15 @@ func (as *ApmServer) validate(old *ApmServer) (admission.Warnings, error) {
 	}
 	if deprecationWarnings != "" {
 		warnings = append(warnings, deprecationWarnings)
+	}
+	if resourcesWarning := commonv1.PodTemplateResourcesOverrideWarning(
+		"spec.resources",
+		"spec.podTemplate",
+		ApmServerContainerName,
+		as.Spec.Resources,
+		as.Spec.PodTemplate,
+	); resourcesWarning != "" {
+		warnings = append(warnings, resourcesWarning)
 	}
 
 	if old != nil {
@@ -131,7 +141,7 @@ func checkAgentConfigurationMinVersion(as *ApmServer) field.ErrorList {
 }
 
 func checkAssociations(as *ApmServer) field.ErrorList {
-	err1 := commonv1.CheckAssociationRefs(field.NewPath("spec").Child("elasticsearchRef"), as.Spec.ElasticsearchRef)
+	err1 := commonv1.CheckElasticsearchSelectorRefs(field.NewPath("spec").Child("elasticsearchRef"), as.Spec.ElasticsearchRef)
 	err2 := commonv1.CheckAssociationRefs(field.NewPath("spec").Child("kibanaRef"), as.Spec.KibanaRef)
 	return append(err1, err2...)
 }

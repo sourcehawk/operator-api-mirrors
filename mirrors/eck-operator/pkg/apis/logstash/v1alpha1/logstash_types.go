@@ -19,7 +19,7 @@ type LogstashHealth string
 
 const (
 	LogstashContainerName = "logstash"
-	// Kind is inferred from the struct name using reflection in SchemeBuilder.Register()
+	// Kind is inferred from the struct name using reflection in scheme.AddKnownTypes()
 	// we duplicate it as a constant here for practical purposes.
 	Kind = "Logstash"
 
@@ -86,7 +86,13 @@ type LogstashSpec struct {
 	// +kubebuilder:validation:Optional
 	Monitoring commonv1.Monitoring `json:"monitoring,omitempty"`
 
-	// PodTemplate provides customisation options for the Logstash pods.
+	// Resources provides a shorthand to set CPU and Memory resources on the Logstash container. When set, these
+	// values override any CPU or memory resource settings specified in the PodTemplate for the primary Logstash
+	// container. To set resources on other containers, use the PodTemplate.
+	// +kubebuilder:validation:Optional
+	Resources commonv1.Resources `json:"resources,omitzero"`
+
+	// PodTemplate provides customization options for the Logstash pods.
 	// +kubebuilder:pruning:PreserveUnknownFields
 	PodTemplate corev1.PodTemplateSpec `json:"podTemplate,omitempty"`
 
@@ -125,7 +131,7 @@ type LogstashService struct {
 
 // ElasticsearchCluster is a named reference to an Elasticsearch cluster which can be used in a Logstash pipeline.
 type ElasticsearchCluster struct {
-	commonv1.ObjectSelector `json:",omitempty,inline"`
+	commonv1.ElasticsearchSelector `json:",omitempty,inline"`
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:MinLength=1
 	// ClusterName is an alias for the cluster to be used to refer to the Elasticsearch cluster in Logstash
@@ -160,6 +166,10 @@ type LogstashStatus struct {
 	MonitoringAssociationStatus commonv1.AssociationStatusMap `json:"monitoringAssociationStatus,omitempty"`
 
 	Selector string `json:"selector"`
+
+	// Conditions holds the current service state of the Logstash.
+	// +optional
+	Conditions commonv1.Conditions `json:"conditions"`
 }
 
 // +kubebuilder:object:root=true
@@ -194,10 +204,10 @@ type LogstashList struct {
 	Items           []Logstash `json:"items"`
 }
 
-func (l *Logstash) ElasticsearchRefs() []commonv1.ObjectSelector {
-	refs := make([]commonv1.ObjectSelector, len(l.Spec.ElasticsearchRefs))
+func (l *Logstash) ElasticsearchRefs() []commonv1.ElasticsearchSelector {
+	refs := make([]commonv1.ElasticsearchSelector, len(l.Spec.ElasticsearchRefs))
 	for i, r := range l.Spec.ElasticsearchRefs {
-		refs[i] = r.ObjectSelector
+		refs[i] = r.ElasticsearchSelector
 	}
 	return refs
 }
@@ -230,8 +240,8 @@ func (l *Logstash) GetAssociations() []commonv1.Association {
 		associations = append(associations, &LogstashESAssociation{
 			Logstash: l,
 			ElasticsearchCluster: ElasticsearchCluster{
-				ObjectSelector: ref.WithDefaultNamespace(l.Namespace),
-				ClusterName:    ref.ClusterName,
+				ElasticsearchSelector: ref.ElasticsearchSelector.WithDefaultNamespace(l.Namespace),
+				ClusterName:           ref.ClusterName,
 			},
 		})
 	}
@@ -318,7 +328,7 @@ func (lses *LogstashESAssociation) AssociationType() commonv1.AssociationType {
 }
 
 func (lses *LogstashESAssociation) AssociationRef() commonv1.AssociationRef {
-	return lses.ElasticsearchCluster.ObjectSelector
+	return lses.ElasticsearchCluster.ElasticsearchSelector
 }
 
 func (lses *LogstashESAssociation) AssociationConfAnnotationName() string {
@@ -418,6 +428,16 @@ func (l *Logstash) MonitoringAssociation(esRef commonv1.ObjectSelector) commonv1
 	}
 }
 
+// MergeConditions provides a nil-safe way to merge the LogstashStatus's Conditions with the new Condition(s).
+func (l *Logstash) MergeConditions(conditions ...commonv1.Condition) {
+	l.Status.Conditions = l.Status.Conditions.MergeWith(conditions...)
+}
+
+// Conditions returns the current conditions of the Logstash resource.
+func (l *Logstash) Conditions() commonv1.Conditions {
+	return l.Status.Conditions
+}
+
 // APIServerService returns the user defined API Service
 func (l *Logstash) APIServerService() LogstashService {
 	for _, service := range l.Spec.Services {
@@ -431,8 +451,4 @@ func (l *Logstash) APIServerService() LogstashService {
 // APIServerTLSOptions returns the user defined TLSOptions of API Service
 func (l *Logstash) APIServerTLSOptions() commonv1.TLSOptions {
 	return l.APIServerService().TLS
-}
-
-func init() {
-	SchemeBuilder.Register(&Logstash{}, &LogstashList{})
 }

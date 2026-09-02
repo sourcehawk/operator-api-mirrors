@@ -9,7 +9,6 @@ import (
 	"maps"
 
 	"gopkg.in/yaml.v3"
-	"k8s.io/utils/ptr"
 
 	beatv1beta1 "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/apis/beat/v1beta1"
 	esclient "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/elasticsearch/client"
@@ -74,7 +73,7 @@ var (
 		{
 			Names:                  []string{"*"},
 			Privileges:             []string{"monitor", "read", "view_index_metadata"},
-			AllowRestrictedIndices: ptr.To[bool](true),
+			AllowRestrictedIndices: new(true),
 		},
 	}
 	diagnosticsAppsKibanaPrivileges = []esclient.ApplicationRole{
@@ -359,6 +358,13 @@ func BeatKibanaRoleName(version, beatType string) string {
 // RolesFileContent is a map {role name -> yaml role spec}.
 // We care about the role names here, but consider the roles spec as a yaml blob we don't need to access.
 type RolesFileContent map[string]any
+
+// PolicyRoles bundles the two SCP-derived role fields that always travel together:
+// the role definitions and the hash used to track when ES has applied them.
+type PolicyRoles struct {
+	Roles RolesFileContent
+	Hash  string
+}
 
 // parseRolesFileContent returns a RolesFileContent from the given data.
 // Since rolesFileContent already corresponds to a deserialized yaml representation of the roles files,

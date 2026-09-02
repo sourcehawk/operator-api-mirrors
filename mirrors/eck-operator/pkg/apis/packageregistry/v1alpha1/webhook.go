@@ -26,6 +26,7 @@ var (
 		checkNoUnknownFields,
 		checkNameLength,
 		checkSupportedVersion,
+		commonv1.PauseOrchestrationAnnotationCheck[*PackageRegistry](),
 	}
 )
 
@@ -53,6 +54,16 @@ func (m *PackageRegistry) validate() (admission.Warnings, error) {
 	errors = append(errors, deprecationErrors...)
 	if deprecationWarning != "" {
 		warnings = append(warnings, deprecationWarning)
+	}
+
+	if resourcesWarning := commonv1.PodTemplateResourcesOverrideWarning(
+		"spec.resources",
+		"spec.podTemplate",
+		EPRContainerName,
+		m.Spec.Resources,
+		m.Spec.PodTemplate,
+	); resourcesWarning != "" {
+		warnings = append(warnings, resourcesWarning)
 	}
 
 	if len(errors) > 0 {

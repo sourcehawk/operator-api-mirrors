@@ -17,7 +17,7 @@ import (
 
 const (
 	KibanaContainerName = "kibana"
-	// Kind is inferred from the struct name using reflection in SchemeBuilder.Register()
+	// Kind is inferred from the struct name using reflection in scheme.AddKnownTypes()
 	// we duplicate it as a constant here for practical purposes.
 	Kind = "Kibana"
 	// KibanaServiceAccount is the Elasticsearch service account to be used to authenticate.
@@ -60,10 +60,6 @@ type KibanaList struct {
 	Items           []Kibana `json:"items"`
 }
 
-func init() {
-	SchemeBuilder.Register(&Kibana{}, &KibanaList{})
-}
-
 // KibanaSpec holds the specification of a Kibana instance.
 type KibanaSpec struct {
 	// Version of Kibana.
@@ -85,14 +81,20 @@ type KibanaSpec struct {
 	// Kibana provides the default Enterprise Search UI starting version 7.14.
 	EnterpriseSearchRef commonv1.ObjectSelector `json:"enterpriseSearchRef,omitempty"`
 
-	// Config holds the Kibana configuration. See: https://www.elastic.co/guide/en/kibana/current/settings.html
+	// Config holds the Kibana configuration. See: https://www.elastic.co/docs/reference/kibana/configuration-reference
 	// +kubebuilder:pruning:PreserveUnknownFields
 	Config *commonv1.Config `json:"config,omitempty"`
 
 	// HTTP holds the HTTP layer configuration for Kibana.
 	HTTP commonv1.HTTPConfig `json:"http,omitempty"`
 
-	// PodTemplate provides customisation options (labels, annotations, affinity rules, resource requests, and so on) for the Kibana pods
+	// Resources provides a shorthand to set CPU and Memory resources on the Kibana container. When set, these
+	// values override any CPU or memory resource settings specified in the PodTemplate for the primary Kibana
+	// container. To set resources on other containers, use the PodTemplate.
+	// +kubebuilder:validation:Optional
+	Resources commonv1.Resources `json:"resources,omitzero"`
+
+	// PodTemplate provides customization options (labels, annotations, affinity rules, resource requests, and so on) for the Kibana pods
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:pruning:PreserveUnknownFields
 	PodTemplate corev1.PodTemplateSpec `json:"podTemplate,omitempty"`
@@ -109,7 +111,7 @@ type KibanaSpec struct {
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 
 	// Monitoring enables you to collect and ship log and monitoring data of this Kibana.
-	// See https://www.elastic.co/guide/en/kibana/current/xpack-monitoring.html.
+	// See https://www.elastic.co/docs/deploy-manage/monitor/stack-monitoring.
 	// Metricbeat and Filebeat are deployed in the same Pod as sidecars and each one sends data to one or two different
 	// Elasticsearch monitoring clusters running in the same Kubernetes cluster.
 	// +kubebuilder:validation:Optional
@@ -157,6 +159,9 @@ func (k *Kibana) ServiceAccountName() string {
 }
 
 var KibanaServiceAccountMinVersion = semver.MustParse("7.17.0")
+
+// KibanaSpacesMinVersion is the minimum Kibana version that supports space-scoped Fleet APIs.
+var KibanaSpacesMinVersion = semver.MustParse("9.1.0")
 
 // -- associations
 
@@ -271,6 +276,16 @@ func (k *Kibana) SetAssociationStatusMap(typ commonv1.AssociationType, status co
 // GetObservedGeneration will return the observed generation from the Kibana status.
 func (k *Kibana) GetObservedGeneration() int64 {
 	return k.Status.ObservedGeneration
+}
+
+// MergeConditions provides a nil-safe way to merge the KibanaStatus's Conditions with the new Condition(s).
+func (k *Kibana) MergeConditions(conditions ...commonv1.Condition) {
+	k.Status.Conditions = k.Status.Conditions.MergeWith(conditions...)
+}
+
+// Conditions returns this Kibana's KibanaStatus Conditions.
+func (k *Kibana) Conditions() commonv1.Conditions {
+	return k.Status.Conditions
 }
 
 // -- association with Elasticsearch

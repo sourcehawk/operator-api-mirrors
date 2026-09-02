@@ -12,7 +12,6 @@ import (
 	"github.com/blang/semver/v4"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/utils/ptr"
 
 	commonv1 "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/apis/common/v1"
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/common/hash"
@@ -54,7 +53,15 @@ const (
 	// API during rolling restarts and upgrades. The value must be a valid Go duration string (e.g. "5m", "1h").
 	RestartAllocationDelayAnnotation = "eck.k8s.elastic.co/restart-allocation-delay"
 
-	// Kind is inferred from the struct name using reflection in SchemeBuilder.Register()
+	// FileBasedSecureSettingsAnnotation enables delivery of spec.secureSettings via cluster_secrets in
+	// file-based settings (ES ≥ 9.5 only) instead of the keystore init container. This is an opt-in feature
+	// because some settings (e.g. OIDC client_secret, SAML key passphrase, Watcher encryption_key) must be
+	// present in the keystore at startup and cannot be delivered via the reload path.
+	// Set this annotation to "true" only when all your secure settings are reloadable (S3/Azure/GCS
+	// credentials, remote-cluster API keys, etc.).
+	FileBasedSecureSettingsAnnotation = "eck.k8s.elastic.co/file-based-secure-settings"
+
+	// Kind is inferred from the struct name using reflection in scheme.AddKnownTypes()
 	// we duplicate it as a constant here for practical purposes.
 	Kind = "Elasticsearch"
 )
@@ -94,6 +101,15 @@ func GetRestartAllocationDelayAnnotation(annotations map[string]string) (*time.D
 	return nil, nil
 }
 
+// HasFileBasedSecureSettingsAnnotation returns true when the Elasticsearch object carries
+// the FileBasedSecureSettingsAnnotation set to "true".
+func (es *Elasticsearch) HasFileBasedSecureSettingsAnnotation() bool {
+	if es == nil {
+		return false
+	}
+	return es.Annotations[FileBasedSecureSettingsAnnotation] == "true"
+}
+
 // +kubebuilder:object:root=true
 
 // ElasticsearchList contains a list of Elasticsearch clusters
@@ -101,10 +117,6 @@ type ElasticsearchList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []Elasticsearch `json:"items"`
-}
-
-func init() {
-	SchemeBuilder.Register(&Elasticsearch{}, &ElasticsearchList{})
 }
 
 // ElasticsearchSpec holds the specification of an Elasticsearch cluster.
@@ -175,7 +187,7 @@ type ElasticsearchSpec struct {
 	VolumeClaimDeletePolicy VolumeClaimDeletePolicy `json:"volumeClaimDeletePolicy,omitempty"`
 
 	// Monitoring enables you to collect and ship log and monitoring data of this Elasticsearch cluster.
-	// See https://www.elastic.co/guide/en/elasticsearch/reference/current/monitor-elasticsearch-cluster.html.
+	// See https://www.elastic.co/docs/deploy-manage/monitor/stack-monitoring.
 	// Metricbeat and Filebeat are deployed in the same Pod as sidecars and each one sends data to one or two different
 	// Elasticsearch monitoring clusters running in the same Kubernetes cluster.
 	// +kubebuilder:validation:Optional
@@ -259,7 +271,7 @@ type RemoteCluster struct {
 	// ElasticsearchRef is a reference to an Elasticsearch cluster running within the same k8s cluster.
 	ElasticsearchRef commonv1.LocalObjectSelector `json:"elasticsearchRef,omitempty"`
 
-	// APIKey can be used to enable remote cluster access using Cross-Cluster API keys: https://www.elastic.co/guide/en/elasticsearch/reference/current/security-api-create-cross-cluster-api-key.html
+	// APIKey can be used to enable remote cluster access using Cross-Cluster API keys: https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-security-create-cross-cluster-api-key
 	// +kubebuilder:validation:Optional
 	APIKey *RemoteClusterAPIKey `json:"apiKey,omitempty"`
 
@@ -301,7 +313,7 @@ type RoleSource struct {
 	// SecretName references a Kubernetes secret in the same namespace as the Elasticsearch resource.
 	// Multiple roles can be specified in a Kubernetes secret, under a single "roles.yml" entry.
 	// The secret value must match the expected file-based specification as described in
-	// https://www.elastic.co/guide/en/elasticsearch/reference/current/defining-roles.html#roles-management-file.
+	// https://www.elastic.co/docs/deploy-manage/users-roles/cluster-or-deployment-auth/defining-roles#roles-management-file.
 	//
 	// Example:
 	// ---
@@ -331,10 +343,10 @@ type FileRealmSource struct {
 	// SecretName references a Kubernetes secret in the same namespace as the Elasticsearch resource.
 	// Multiple users and their roles mapping can be specified in a Kubernetes secret.
 	// The secret should contain 2 entries:
-	// - users: contain all users and the hash of their password (https://www.elastic.co/guide/en/elasticsearch/reference/current/security-settings.html#password-hashing-algorithms)
+	// - users: contain all users and the hash of their password (https://www.elastic.co/docs/reference/elasticsearch/configuration-reference/security-settings#password-hashing-algorithms)
 	// - users_roles: contain the role to users mapping
 	// The format of those 2 entries must correspond to the expected file realm format, as specified in Elasticsearch
-	// documentation: https://www.elastic.co/guide/en/elasticsearch/reference/7.5/file-realm.html#file-realm-configuration.
+	// documentation: https://www.elastic.co/docs/deploy-manage/users-roles/cluster-or-deployment-auth/file-based#file-realm-configuration.
 	//
 	// Example:
 	// ---
@@ -372,11 +384,15 @@ type NodeSet struct {
 	// +kubebuilder:validation:Optional
 	Count int32 `json:"count"`
 
+	// Resources specifies the resource requests and limits (CPU and Memory only) for the Elasticsearch nodes in this NodeSet. When set, these override the resource requests and limits set in the PodTemplate for the primary Elasticsearch container. To set the resources for other containers, use the PodTemplate.Spec.Containers[].Resources field.
+	// +kubebuilder:validation:Optional
+	Resources commonv1.Resources `json:"resources,omitzero"`
+
 	// ZoneAwareness enables automatic topology-aware scheduling and shard-awareness configuration.
 	// +kubebuilder:validation:Optional
 	ZoneAwareness *ZoneAwareness `json:"zoneAwareness,omitempty"`
 
-	// PodTemplate provides customisation options (labels, annotations, affinity rules, resource requests, and so on) for the Pods belonging to this NodeSet.
+	// PodTemplate provides customization options (labels, annotations, affinity rules, resource requests, and so on) for the Pods belonging to this NodeSet.
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:pruning:PreserveUnknownFields
 	PodTemplate corev1.PodTemplateSpec `json:"podTemplate,omitempty"`
@@ -488,7 +504,7 @@ type ChangeBudget struct {
 // most cases.
 var DefaultChangeBudget = ChangeBudget{
 	MaxSurge:       nil,
-	MaxUnavailable: ptr.To[int32](1),
+	MaxUnavailable: new(int32(1)),
 }
 
 func (cb ChangeBudget) GetMaxSurgeOrDefault() *int32 {

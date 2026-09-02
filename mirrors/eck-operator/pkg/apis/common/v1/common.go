@@ -22,6 +22,12 @@ type DeploymentHealth string
 const (
 	GreenHealth DeploymentHealth = "green"
 	RedHealth   DeploymentHealth = "red"
+
+	// PauseOrchestrationAnnotation pauses spec-driven orchestration (rolling upgrades, StatefulSet spec changes, scale
+	// up/down) while keeping housekeeping running (certificate rotation, unicast hosts, user/secret reconciliation,
+	// health monitoring). Defined here (rather than in pkg/controller/common) so the validating webhook can reference
+	// it without introducing an import cycle.
+	PauseOrchestrationAnnotation = "eck.k8s.elastic.co/pause-orchestration"
 )
 
 // DeploymentStatus represents status information about a deployment.
@@ -38,6 +44,9 @@ type DeploymentStatus struct {
 	Version string `json:"version,omitempty"`
 	// Health of the deployment.
 	Health DeploymentHealth `json:"health,omitempty"`
+	// Conditions holds the current service state of the deployment.
+	// +optional
+	Conditions Conditions `json:"conditions"`
 }
 
 // IsDegraded returns true if the current status is worse than the previous.
@@ -59,6 +68,8 @@ type SecretRef struct {
 	// SecretName is the name of the secret.
 	SecretName string `json:"secretName,omitempty"`
 }
+
+var _ AssociationRef = (*LocalObjectSelector)(nil)
 
 // LocalObjectSelector defines a reference to a Kubernetes object corresponding to an Elastic resource managed by the operator
 type LocalObjectSelector struct {
@@ -156,6 +167,8 @@ func (o LocalObjectSelector) IsValid() error {
 	}
 	return nil
 }
+
+var _ AssociationRef = (*ObjectSelector)(nil)
 
 // ObjectSelector defines a reference to a Kubernetes object which can be an Elastic resource managed by the operator
 // or a Secret describing an external Elastic resource not managed by the operator.
@@ -284,6 +297,8 @@ func (o ObjectSelector) ToID() string {
 	return o.NameOrSecretName()
 }
 
+var _ AssociationRef = (*ElasticsearchSelector)(nil)
+
 // ElasticsearchSelector defines a reference to an Elasticsearch cluster managed by the operator
 // or a Secret describing an external cluster not managed by the operator.
 type ElasticsearchSelector struct {
@@ -321,6 +336,50 @@ func (e ElasticsearchSelector) WithDefaultNamespace(defaultNamespace string) Ela
 	return ElasticsearchSelector{
 		ObjectSelector:              e.ObjectSelector.WithDefaultNamespace(defaultNamespace),
 		ClientCertificateSecretName: e.ClientCertificateSecretName,
+	}
+}
+
+var _ AssociationRef = (*FleetServerSelector)(nil)
+
+// FleetServerSelector defines a reference to a Fleet Server managed by the operator
+// or a Secret describing an external Fleet Server not managed by the operator.
+type FleetServerSelector struct {
+	ObjectSelector `json:",inline"`
+
+	// ClientCertificateSecretName is the name of an existing Kubernetes secret containing a client certificate
+	// (tls.crt) and private key (tls.key) for client authentication to the referenced Fleet Server.
+	// This field is only relevant when the referenced Fleet Server has client authentication enabled.
+	// If not specified and the referenced Fleet Server requires client authentication, ECK will auto-generate a
+	// client certificate.
+	// This field can only be used when referencing a Fleet Server managed by ECK (via name); it cannot be
+	// combined with secretName.
+	ClientCertificateSecretName string `json:"clientCertificateSecretName,omitempty"`
+}
+
+// GetClientCertificateSecretName returns the name of the client certificate secret.
+func (f FleetServerSelector) GetClientCertificateSecretName() string {
+	return f.ClientCertificateSecretName
+}
+
+// IsValid validates the FleetServerSelector, including the embedded ObjectSelector.
+func (f FleetServerSelector) IsValid() error {
+	if err := f.ObjectSelector.IsValid(); err != nil {
+		return err
+	}
+	if f.Name == "" && f.ClientCertificateSecretName != "" {
+		return errors.New("clientCertificateSecretName can only be used in combination with name")
+	}
+	return nil
+}
+
+// WithDefaultNamespace adds a default namespace to a given FleetServerSelector if none is set.
+func (f FleetServerSelector) WithDefaultNamespace(defaultNamespace string) FleetServerSelector {
+	if len(f.Namespace) > 0 {
+		return f
+	}
+	return FleetServerSelector{
+		ObjectSelector:              f.ObjectSelector.WithDefaultNamespace(defaultNamespace),
+		ClientCertificateSecretName: f.ClientCertificateSecretName,
 	}
 }
 
@@ -564,3 +623,8 @@ func IsConfiguredToAllowDowngrades(o metav1.Object) bool {
 	val, exists := o.GetAnnotations()[DisableDowngradeValidationAnnotation]
 	return exists && val == "true"
 }
+
+const (
+	RestrictWatchedResourcesLabelName  = "eck.k8s.elastic.co/watched"
+	RestrictWatchedResourcesLabelValue = "true"
+)

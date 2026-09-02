@@ -38,6 +38,7 @@ const (
 	MetricsSecureFlag                    = "metrics-secure"
 	MetricsCertDirFlag                   = "metrics-cert-dir"
 	NamespacesFlag                       = "namespaces"
+	NamespaceSelectorFlag                = "namespace-selector"
 	OperatorNamespaceFlag                = "operator-namespace"
 	SetDefaultSecurityContextFlag        = "set-default-security-context"
 	TelemetryIntervalFlag                = "telemetry-interval"
@@ -47,4 +48,5 @@ const (
 	WebhookNameFlag                      = "webhook-name"
 	WebhookSecretFlag                    = "webhook-secret"
 	WebhookPortFlag                      = "webhook-port"
+	RestrictWatchedResources             = "restrict-watched-resources"
 )

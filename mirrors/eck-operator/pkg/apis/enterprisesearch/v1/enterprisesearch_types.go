@@ -16,7 +16,7 @@ import (
 
 const (
 	EnterpriseSearchContainerName = "enterprise-search"
-	// Kind is inferred from the struct name using reflection in SchemeBuilder.Register()
+	// Kind is inferred from the struct name using reflection in scheme.AddKnownTypes()
 	// we duplicate it as a constant here for practical purposes.
 	Kind = "EnterpriseSearch"
 )
@@ -48,9 +48,15 @@ type EnterpriseSearchSpec struct {
 	HTTP commonv1.HTTPConfig `json:"http,omitempty"`
 
 	// ElasticsearchRef is a reference to the Elasticsearch cluster running in the same Kubernetes cluster.
-	ElasticsearchRef commonv1.ObjectSelector `json:"elasticsearchRef,omitempty"`
+	ElasticsearchRef commonv1.ElasticsearchSelector `json:"elasticsearchRef,omitempty"`
 
-	// PodTemplate provides customisation options (labels, annotations, affinity rules, resource requests, and so on)
+	// Resources provides a shorthand to set CPU and Memory resources on the Enterprise Search container. When set,
+	// these values override any CPU or memory resource settings specified in the PodTemplate for the primary
+	// Enterprise Search container. To set resources on other containers, use the PodTemplate.
+	// +kubebuilder:validation:Optional
+	Resources commonv1.Resources `json:"resources,omitzero"`
+
+	// PodTemplate provides customization options (labels, annotations, affinity rules, resource requests, and so on)
 	// for the Enterprise Search pods.
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:pruning:PreserveUnknownFields
@@ -173,6 +179,16 @@ func (ent *EnterpriseSearch) GetObservedGeneration() int64 {
 	return ent.Status.ObservedGeneration
 }
 
+// MergeConditions provides a nil-safe way to merge the EnterpriseSearchStatus's Conditions with the new Condition(s).
+func (ent *EnterpriseSearch) MergeConditions(conditions ...commonv1.Condition) {
+	ent.Status.Conditions = ent.Status.Conditions.MergeWith(conditions...)
+}
+
+// Conditions returns this EnterpriseSearch's EnterpriseSearchStatus Conditions.
+func (ent *EnterpriseSearch) Conditions() commonv1.Conditions {
+	return ent.Status.Conditions
+}
+
 // +kubebuilder:object:root=true
 
 // EnterpriseSearch is a Kubernetes CRD to represent Enterprise Search.
@@ -200,8 +216,4 @@ type EnterpriseSearchList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []EnterpriseSearch `json:"items"`
-}
-
-func init() {
-	SchemeBuilder.Register(&EnterpriseSearch{}, &EnterpriseSearchList{})
 }

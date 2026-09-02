@@ -19,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/uuid"
 
+	commonv1 "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/apis/common/v1"
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/utils/chrono"
 	ulog "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/utils/log"
 )
@@ -130,6 +131,9 @@ func ExpectedTrialStatus(operatorNamespace string, license types.NamespacedName,
 			Annotations: map[string]string{
 				TrialLicenseSecretName:      license.Name,
 				TrialLicenseSecretNamespace: license.Namespace,
+			},
+			Labels: map[string]string{
+				commonv1.RestrictWatchedResourcesLabelName: commonv1.RestrictWatchedResourcesLabelValue,
 			},
 		},
 		Data: map[string][]byte{

@@ -46,6 +46,7 @@ func secureSettingsVolume(
 	hasKeystore HasKeystore,
 	meta metadata.Metadata,
 	namer name.Namer,
+	operatorNamespace string,
 	additionalSources ...commonv1.NamespacedSecretSource,
 ) (*volume.SecretVolume, string, error) {
 	// setup (or remove) watches for the user-provided secret to reconcile on any change
@@ -56,7 +57,7 @@ func secureSettingsVolume(
 	// Additional sources, introduced to load remote cluster keys.
 	secretSources = append(secretSources, additionalSources...)
 	// user-provided Secrets referenced in a StackConfigPolicy that configures the resource
-	policySecretSources, err := stackconfigpolicy.GetSecureSettingsSecretSourcesForResources(ctx, r.K8sClient(), hasKeystore, hasKeystore.GetObjectKind().GroupVersionKind().Kind)
+	policySecretSources, err := stackconfigpolicy.GetSecureSettingsSecretSourcesForResources(ctx, r.K8sClient(), hasKeystore, hasKeystore.GetObjectKind().GroupVersionKind().Kind, operatorNamespace)
 	if err != nil {
 		return nil, "", pkgerrors.Wrap(err, "fail to get secure settings secret sources")
 	}
@@ -103,7 +104,8 @@ func reconcileSecureSettings(
 	hasKeystore HasKeystore,
 	userSecrets []corev1.Secret,
 	namer name.Namer,
-	meta metadata.Metadata) (*corev1.Secret, error) {
+	meta metadata.Metadata,
+) (*corev1.Secret, error) {
 	aggregatedData := map[string][]byte{}
 
 	for _, s := range userSecrets {
@@ -203,8 +205,48 @@ func secureSettingsSecretName(namer name.Namer, hasKeystore HasKeystore) string 
 	return namer.Suffix(hasKeystore.GetName(), secureSettingsSecretSuffix)
 }
 
+// DeleteSecureSettingsSecret deletes the operator-managed aggregated secure settings Secret
+// for the given owner if it exists. This is used when upgrading to ES >= 9.5 where secure
+// settings are delivered via file-based settings instead of the keystore init container.
+func DeleteSecureSettingsSecret(ctx context.Context, c k8s.Client, namer name.Namer, owner HasKeystore) error {
+	return k8s.DeleteSecretIfExists(ctx, c, types.NamespacedName{
+		Namespace: owner.GetNamespace(),
+		Name:      namer.Suffix(owner.GetName(), secureSettingsSecretSuffix),
+	})
+}
+
 // SecureSettingsWatchName returns the watch name according to the deployment name.
 // It is unique per APM or Kibana deployment.
 func SecureSettingsWatchName(namespacedName types.NamespacedName) string {
 	return fmt.Sprintf("%s-%s-secure-settings", namespacedName.Namespace, namespacedName.Name)
+}
+
+// BuildSecureSettingsData retrieves all secrets referenced by the given secret sources and returns
+// them in the structure expected by Elasticsearch file-based settings cluster_secrets:
+//
+//	{"string_secrets": {"s3.client.default.access_key": "..."}}
+//
+// All values are placed in string_secrets. ES's SecureClusterStateSettings merges string_secrets
+// and file_secrets into a single internal map, so both getString() and getFile() resolve keys from
+// either bucket — placement does not affect which API the plugin uses to retrieve the value.
+// Keystore keys are passed through as-is.
+func BuildSecureSettingsData(
+	ctx context.Context,
+	c k8s.Client,
+	recorder toolsevents.EventRecorder,
+	hasKeystore HasKeystore,
+	secretSources []commonv1.NamespacedSecretSource,
+) (map[string]any, error) {
+	userSecrets, err := retrieveUserSecrets(ctx, c, recorder, hasKeystore, secretSources)
+	if err != nil {
+		return nil, err
+	}
+
+	stringSecrets := map[string]any{}
+	for _, s := range userSecrets {
+		for k, v := range s.Data {
+			stringSecrets[k] = string(v)
+		}
+	}
+	return map[string]any{"string_secrets": stringSecrets}, nil
 }

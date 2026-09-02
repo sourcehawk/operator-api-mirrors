@@ -27,6 +27,7 @@ var (
 		checkNameLength,
 		checkSupportedVersion,
 		checkAssociation,
+		commonv1.PauseOrchestrationAnnotationCheck[*ElasticMapsServer](),
 	}
 )
 
@@ -58,6 +59,15 @@ func (m *ElasticMapsServer) validate() (admission.Warnings, error) {
 	if deprecationWarnings != "" {
 		warnings = append(warnings, deprecationWarnings)
 	}
+	if resourcesWarning := commonv1.PodTemplateResourcesOverrideWarning(
+		"spec.resources",
+		"spec.podTemplate",
+		MapsContainerName,
+		m.Spec.Resources,
+		m.Spec.PodTemplate,
+	); resourcesWarning != "" {
+		warnings = append(warnings, resourcesWarning)
+	}
 
 	if len(errors) > 0 {
 		return warnings, apierrors.NewInvalid(groupKind, m.Name, errors)
@@ -82,5 +92,5 @@ func checkIfVersionDeprecated(ems *ElasticMapsServer) (string, field.ErrorList) 
 }
 
 func checkAssociation(ems *ElasticMapsServer) field.ErrorList {
-	return commonv1.CheckAssociationRefs(field.NewPath("spec").Child("elasticsearchRef"), ems.Spec.ElasticsearchRef)
+	return commonv1.CheckElasticsearchSelectorRefs(field.NewPath("spec").Child("elasticsearchRef"), ems.Spec.ElasticsearchRef)
 }
