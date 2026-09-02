@@ -12,7 +12,6 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	esv1 "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/apis/elasticsearch/v1"
@@ -27,6 +26,7 @@ import (
 	commonversion "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/common/version"
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/elasticsearch/label"
 	esettings "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/elasticsearch/settings"
+	esversion "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/elasticsearch/version"
 	esvolume "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/elasticsearch/volume"
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/utils/k8s"
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/utils/maps"
@@ -121,7 +121,7 @@ func InjectKeystorePassword(builder *defaults.PodTemplateBuilder, secretName str
 		VolumeSource: corev1.VolumeSource{
 			Secret: &corev1.SecretVolumeSource{
 				SecretName:  secretName,
-				DefaultMode: ptr.To[int32](0440),
+				DefaultMode: new(int32(0440)),
 			},
 		},
 	}
@@ -158,8 +158,8 @@ func InjectKeystorePassword(builder *defaults.PodTemplateBuilder, secretName str
 
 // MaybeGarbageCollectKeystorePasswordSecret deletes the managed keystore
 // password secret when managed keystore passwords are not applicable for this
-// resource (version < 9.4.0, FIPS disabled, or user-provided password
-// override).
+// resource (version < 9.4.0, FIPS disabled, user-provided password override,
+// or file-based secure settings active).
 func MaybeGarbageCollectKeystorePasswordSecret(
 	ctx context.Context,
 	c k8s.Client,
@@ -167,6 +167,11 @@ func MaybeGarbageCollectKeystorePasswordSecret(
 	esVersion commonversion.Version,
 	policyElasticsearchConfig *commonsettings.CanonicalConfig,
 ) error {
+	// When file-based secure settings are active (opt-in annotation + ES >= 9.5), the keystore
+	// init container is not used; GC any existing password secret and skip further checks.
+	if es.HasFileBasedSecureSettingsAnnotation() && esVersion.GTE(esversion.FileBasedSecureSettingsMinVersion) {
+		return DeleteKeystorePasswordSecret(ctx, c, es)
+	}
 	shouldManage, err := esettings.ShouldManageGeneratedKeystorePassword(
 		ctx,
 		c,

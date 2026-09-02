@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	// Kind is inferred from the struct name using reflection in SchemeBuilder.Register()
+	// Kind is inferred from the struct name using reflection in scheme.AddKnownTypes()
 	// we duplicate it as a constant here for practical purposes.
 	Kind = "Beat"
 )
@@ -39,7 +39,7 @@ type BeatSpec struct {
 
 	// ElasticsearchRef is a reference to an Elasticsearch cluster running in the same Kubernetes cluster.
 	// +kubebuilder:validation:Optional
-	ElasticsearchRef commonv1.ObjectSelector `json:"elasticsearchRef,omitempty"`
+	ElasticsearchRef commonv1.ElasticsearchSelector `json:"elasticsearchRef,omitempty"`
 
 	// KibanaRef is a reference to a Kibana instance running in the same Kubernetes cluster.
 	// It allows automatic setup of dashboards and visualizations.
@@ -70,6 +70,12 @@ type BeatSpec struct {
 	// Can only be used if ECK is enforcing RBAC on references.
 	// +kubebuilder:validation:Optional
 	ServiceAccountName string `json:"serviceAccountName,omitempty"`
+
+	// Resources provides a shorthand to set CPU and Memory resources on the Beat container. When set, these
+	// values override any CPU or memory resource settings specified in the DaemonSet or Deployment PodTemplate for
+	// the primary Beat container. To set resources on other containers, use the PodTemplate.
+	// +kubebuilder:validation:Optional
+	Resources commonv1.Resources `json:"resources,omitzero"`
 
 	// DaemonSet specifies the Beat should be deployed as a DaemonSet, and allows providing its spec.
 	// Cannot be used along with `deployment`. If both are absent a default for the Type is used.
@@ -135,6 +141,9 @@ type BeatStatus struct {
 	// controller has not yet processed the changes contained in the Beats specification.
 	// +kubebuilder:validation:Optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+	// Conditions holds the current service state of the beat resource.
+	// +optional
+	Conditions commonv1.Conditions `json:"conditions"`
 }
 
 type BeatHealth string
@@ -272,13 +281,23 @@ func (b *Beat) IsMarkedForDeletion() bool {
 	return !b.DeletionTimestamp.IsZero()
 }
 
-func (b *Beat) ElasticsearchRef() commonv1.ObjectSelector {
+func (b *Beat) ElasticsearchRef() commonv1.ElasticsearchSelector {
 	return b.Spec.ElasticsearchRef
 }
 
 // GetObservedGeneration will return the observedGeneration from the Elastic Beat's status.
 func (b *Beat) GetObservedGeneration() int64 {
 	return b.Status.ObservedGeneration
+}
+
+// MergeConditions provides a nil-safe way to merge the BeatStatus's Conditions with the new Condition(s).
+func (b *Beat) MergeConditions(conditions ...commonv1.Condition) {
+	b.Status.Conditions = b.Status.Conditions.MergeWith(conditions...)
+}
+
+// Conditions returns this Beat's BeatStatus Conditions.
+func (b *Beat) Conditions() commonv1.Conditions {
+	return b.Status.Conditions
 }
 
 type BeatESAssociation struct {
@@ -382,10 +401,6 @@ type BeatList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []Beat `json:"items"`
-}
-
-func init() {
-	SchemeBuilder.Register(&Beat{}, &BeatList{})
 }
 
 // -- association with monitoring Elasticsearch clusters

@@ -26,6 +26,10 @@ const (
 	EventReasonUnexpected = "Unexpected"
 	// EventReasonValidation describes events that were due to an invalid resource being submitted by the user.
 	EventReasonValidation = "Validation"
+	// EventReasonPaused describes events that were due to the pause-orchestration annotation being enabled.
+	EventReasonPaused = "Paused"
+	// EventReasonResumed describes events that were due to the pause-orchestration annotation being disabled.
+	EventReasonResumed = "Resumed"
 )
 
 // Event reasons for Association controllers
@@ -101,6 +105,10 @@ const (
 	EventActionAutoscalingOffline = "AutoscalingOfflineReconciliation"
 	// EventActionDistributionCheck describes the distribution check step the controller was taking when the event was triggered.
 	EventActionDistributionCheck = "DistributionCheck"
+	// EventActionPendingOrchestrationChanges describes when spec changes have been made while the eck.k8s.elastic.co/pause-orchestration annotation is enabled.
+	EventActionPendingOrchestrationChanges = "PendingOrchestrationChanges"
+	// EventActionOrchestrationResumed describes when the eck.k8s.elastic.co/pause-orchestration annotation is disabled and orchestration has resumed normally.
+	EventActionOrchestrationResumed = "OrchestrationResumed"
 )
 
 // Event is a k8s event that can be recorded via an event recorder.

@@ -18,6 +18,7 @@ import (
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/elasticsearch/label"
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/elasticsearch/settings"
 	es_sset "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/elasticsearch/sset"
+	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/elasticsearch/stackconfig"
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/utils/k8s"
 )
 
@@ -64,7 +65,7 @@ type ResolvedConfig struct {
 	ClientAuthenticationRequired bool
 
 	// PolicyConfig contains StackConfigPolicy settings.
-	PolicyConfig PolicyConfig
+	PolicyConfig stackconfig.PolicyConfig
 
 	// ClientAuthenticationOverrideWarning is set when spec.http.tls.client.authentication is enabled
 	// but StackConfigPolicy overrides xpack.security.http.ssl.client_authentication to a non-required value.

@@ -38,6 +38,7 @@ type SettingsMetadata struct {
 // This is where the configuration of Elasticsearch objects resides.
 type SettingsState struct {
 	ClusterSettings        *commonv1.Config `json:"cluster_settings,omitempty"`
+	ClusterSecrets         *commonv1.Config `json:"cluster_secrets,omitempty"`
 	SnapshotRepositories   *commonv1.Config `json:"snapshot_repositories,omitempty"`
 	SLM                    *commonv1.Config `json:"slm,omitempty"`
 	RoleMappings           *commonv1.Config `json:"role_mappings,omitempty"`
@@ -71,8 +72,8 @@ func newEmptySettingsState() SettingsState {
 		SnapshotRepositories:   &commonv1.Config{Data: map[string]any{}},
 		SLM:                    &commonv1.Config{Data: map[string]any{}},
 		RoleMappings:           &commonv1.Config{Data: map[string]any{}},
-		IndexLifecyclePolicies: &commonv1.Config{Data: map[string]any{}},
 		IngestPipelines:        &commonv1.Config{Data: map[string]any{}},
+		IndexLifecyclePolicies: &commonv1.Config{Data: map[string]any{}},
 		IndexTemplates: &IndexTemplates{
 			ComponentTemplates:       &commonv1.Config{Data: map[string]any{}},
 			ComposableIndexTemplates: &commonv1.Config{Data: map[string]any{}},
@@ -81,8 +82,10 @@ func newEmptySettingsState() SettingsState {
 }
 
 // updateState updates the Settings state from a StackConfigPolicy for a given Elasticsearch.
+// cluster_secrets is owned by the ES controller and is always preserved across the update.
 func (s *Settings) updateState(es types.NamespacedName, esConfigPolicy policyv1alpha1.ElasticsearchConfigPolicySpec) error {
 	esConfigPolicy = *esConfigPolicy.DeepCopy() // be sure to not mutate the original es config policy
+	savedClusterSecrets := s.State.ClusterSecrets
 	state := newEmptySettingsState()
 	// mutate Snapshot Repositories
 	if esConfigPolicy.SnapshotRepositories != nil {
@@ -121,6 +124,7 @@ func (s *Settings) updateState(es types.NamespacedName, esConfigPolicy policyv1a
 	if esConfigPolicy.IndexTemplates.ComponentTemplates != nil {
 		state.IndexTemplates.ComponentTemplates = esConfigPolicy.IndexTemplates.ComponentTemplates
 	}
+	state.ClusterSecrets = savedClusterSecrets
 	s.State = state
 	return nil
 }

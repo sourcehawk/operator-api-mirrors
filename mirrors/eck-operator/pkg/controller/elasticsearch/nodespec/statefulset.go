@@ -22,6 +22,7 @@ import (
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/elasticsearch/services"
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/elasticsearch/settings"
 	es_sset "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/elasticsearch/sset"
+	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/elasticsearch/stackconfig"
 	esvolume "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/elasticsearch/volume"
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/utils/k8s"
 )
@@ -81,7 +82,7 @@ func BuildStatefulSet(
 	keystoreResources *keystore.Resources,
 	existingStatefulSets es_sset.StatefulSetList,
 	setDefaultSecurityContext bool,
-	policyConfig PolicyConfig,
+	policyConfig stackconfig.PolicyConfig,
 	meta metadata.Metadata,
 	actualPodsRestartTriggerAnnotationValue string,
 	clientAuthRequired bool,

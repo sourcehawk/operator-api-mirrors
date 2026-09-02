@@ -10,7 +10,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/intstr"
-	"k8s.io/utils/ptr"
 
 	eprv1alpha1 "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/apis/packageregistry/v1alpha1"
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/common/certificates"
@@ -93,25 +92,25 @@ func newPodSpec(epr eprv1alpha1.PackageRegistry, configHash string, meta metadat
 
 	var runAsNonRoot *bool
 	if supportsRunAsNonRoot(v) {
-		runAsNonRoot = ptr.To(true)
+		runAsNonRoot = new(true)
 	}
 
 	builder = builder.
 		WithAnnotations(podMeta.Annotations).
 		WithLabels(podMeta.Labels).
-		WithResources(DefaultResources).
+		WithResourcesAndOverrides(DefaultResources, epr.Spec.Resources).
 		WithDockerImage(epr.Spec.Image, container.ImageRepository(container.PackageRegistryImage, v)).
 		WithReadinessProbe(readinessProbe(epr.Spec.HTTP.TLS.Enabled())).
 		WithPorts(defaultContainerPorts).
 		WithInitContainerDefaults().
 		WithEnv(eprVars...).
 		WithContainersSecurityContext(corev1.SecurityContext{
-			AllowPrivilegeEscalation: ptr.To(false),
+			AllowPrivilegeEscalation: new(false),
 			Capabilities: &corev1.Capabilities{
 				Drop: []corev1.Capability{"ALL"},
 			},
 			RunAsNonRoot: runAsNonRoot,
-			Privileged:   ptr.To(false),
+			Privileged:   new(false),
 		})
 
 	if setDefaultSecurityContext {

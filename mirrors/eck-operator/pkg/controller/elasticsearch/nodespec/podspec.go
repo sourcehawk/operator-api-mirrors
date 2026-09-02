@@ -16,7 +16,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/utils/ptr"
 
 	esv1 "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/apis/elasticsearch/v1"
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/common/annotation"
@@ -32,6 +31,7 @@ import (
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/elasticsearch/network"
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/elasticsearch/securitycontext"
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/elasticsearch/settings"
+	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/elasticsearch/stackconfig"
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/elasticsearch/stackmon"
 	esvolume "github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/controller/elasticsearch/volume"
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/utils/k8s"
@@ -63,7 +63,7 @@ func BuildPodTemplateSpec(
 	cfg settings.CanonicalConfig,
 	keystoreResources *keystore.Resources,
 	setDefaultSecurityContext bool,
-	policyConfig PolicyConfig,
+	policyConfig stackconfig.PolicyConfig,
 	meta metadata.Metadata,
 	actualPodsRestartTriggerAnnotationValue string,
 	clientAuthenticationRequired bool,
@@ -97,7 +97,7 @@ func BuildPodTemplateSpec(
 
 	if ver.GTE(minDefaultSecurityContextVersion) && setDefaultSecurityContext {
 		builder = builder.WithPodSecurityContext(corev1.PodSecurityContext{
-			FSGroup: ptr.To[int64](defaultFsGroup),
+			FSGroup: new(int64(defaultFsGroup)),
 			SeccompProfile: &corev1.SeccompProfile{
 				Type: corev1.SeccompProfileTypeRuntimeDefault,
 			},
@@ -134,7 +134,7 @@ func BuildPodTemplateSpec(
 		WithLabels(meta.Labels).
 		WithAnnotations(meta.Annotations).
 		WithDockerImage(es.Spec.Image, container.ImageRepository(container.ElasticsearchImage, ver)).
-		WithResources(DefaultResources).
+		WithResourcesAndOverrides(DefaultResources, nodeSet.Resources).
 		WithTerminationGracePeriod(DefaultTerminationGracePeriodSeconds).
 		WithPorts(defaultContainerPorts).
 		WithReadinessProbe(*NewReadinessProbe(ver)).
@@ -163,7 +163,7 @@ func BuildPodTemplateSpec(
 		WithTopologySpreadConstraints(spreadConstraints...).
 		WithRequiredNodeAffinityMatchExpressions(requiredMatchExpressions...)
 
-	builder, err = stackmon.WithMonitoring(ctx, client, builder, es, meta)
+	builder, err = stackmon.WithMonitoring(ctx, client, builder, es, meta, clientAuthenticationRequired)
 	if err != nil {
 		return corev1.PodTemplateSpec{}, err
 	}

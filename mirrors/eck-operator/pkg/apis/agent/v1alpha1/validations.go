@@ -34,6 +34,8 @@ var (
 		checkReferenceSetForMode,
 		checkSingleESRefInFleetMode,
 		checkAssociations,
+		checkClientAuthentication,
+		commonv1.PauseOrchestrationAnnotationCheck[*Agent](),
 	}
 
 	updateChecks = []func(old, curr *Agent) field.ErrorList{
@@ -243,7 +245,7 @@ func checkFleetServerOrFleetServerRef(a *Agent) field.ErrorList {
 }
 
 func checkHTTPConfigOnlyForFleetServer(a *Agent) field.ErrorList {
-	if !a.Spec.FleetServerEnabled && !reflect.DeepEqual(a.Spec.HTTP, commonv1.HTTPConfig{}) {
+	if !a.Spec.FleetServerEnabled && !reflect.DeepEqual(a.Spec.HTTP, commonv1.HTTPConfigWithClientOptions{}) {
 		return field.ErrorList{
 			field.Invalid(
 				field.NewPath("spec").Child("http"),
@@ -302,6 +304,44 @@ func checkSingleESRefInFleetMode(a *Agent) field.ErrorList {
 func checkAssociations(a *Agent) field.ErrorList {
 	err1 := commonv1.CheckAssociationRefs(field.NewPath("spec").Child("elasticsearchRefs"), a.ElasticsearchRefs()...)
 	err2 := commonv1.CheckAssociationRefs(field.NewPath("spec").Child("kibanaRef"), a.Spec.KibanaRef)
-	err3 := commonv1.CheckAssociationRefs(field.NewPath("spec").Child("fleetServerRef"), a.Spec.FleetServerRef)
+	err3 := commonv1.CheckFleetServerSelectorRefs(field.NewPath("spec").Child("fleetServerRef"), a.Spec.FleetServerRef)
 	return append(append(err1, err2...), err3...)
+}
+
+func checkClientAuthentication(a *Agent) field.ErrorList {
+	if !a.Spec.HTTP.TLS.Client.Authentication {
+		return nil
+	}
+	if !a.Spec.FleetServerEnabled {
+		return field.ErrorList{
+			field.Invalid(
+				field.NewPath("spec").Child("http", "tls", "client", "authentication"),
+				true,
+				"client certificate authentication is only supported when Fleet Server is enabled",
+			),
+		}
+	}
+	if !a.Spec.HTTP.TLS.Enabled() {
+		return field.ErrorList{
+			field.Invalid(
+				field.NewPath("spec").Child("http", "tls", "client", "authentication"),
+				true,
+				"client certificate authentication requires TLS to be enabled",
+			),
+		}
+	}
+	v, err := semver.Parse(a.Spec.Version)
+	if err != nil {
+		return nil // version parse errors are reported by checkSupportedVersion
+	}
+	if !FleetServerClientAuthSupported(v) {
+		return field.ErrorList{
+			field.Invalid(
+				field.NewPath("spec").Child("http", "tls", "client", "authentication"),
+				true,
+				"client certificate authentication requires Elastic Agent 8.19.19+, 9.3.8+, 9.4.4+, or 9.5.0+",
+			),
+		}
+	}
+	return nil
 }

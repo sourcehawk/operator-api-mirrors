@@ -141,6 +141,16 @@ func CheckLocalAssociationRefs(path *field.Path, refs ...LocalObjectSelector) fi
 	return nil
 }
 
+// CheckFleetServerSelectorRefs checks that the given Fleet Server selector references are valid.
+func CheckFleetServerSelectorRefs(path *field.Path, refs ...FleetServerSelector) field.ErrorList {
+	for _, ref := range refs {
+		if err := ref.IsValid(); err != nil {
+			return field.ErrorList{field.Forbidden(path, fmt.Sprintf("Invalid association reference: %s", err))}
+		}
+	}
+	return nil
+}
+
 func ParseVersion(ver string) (*version.Version, field.ErrorList) {
 	v, err := version.Parse(ver)
 	if err != nil {
@@ -148,4 +158,26 @@ func ParseVersion(ver string) (*version.Version, field.ErrorList) {
 	}
 
 	return &v, nil
+}
+
+// CheckPauseOrchestrationAnnotation ensures that the PauseOrchestrationAnnotation annotation is absent or set to
+// exactly 'true' or exactly 'false'.
+func CheckPauseOrchestrationAnnotation(obj metav1.Object) field.ErrorList {
+	if annValue, ok := obj.GetAnnotations()[PauseOrchestrationAnnotation]; ok {
+		if annValue != "true" && annValue != "false" {
+			return field.ErrorList{
+				field.Invalid(
+					field.NewPath("metadata").Child("annotations").Key(PauseOrchestrationAnnotation),
+					annValue,
+					fmt.Sprintf("%s annotation must be set to either 'true' or 'false' if provided", PauseOrchestrationAnnotation),
+				),
+			}
+		}
+	}
+	return nil
+}
+
+// PauseOrchestrationAnnotationCheck returns a validation function for use in per-resource validation lists.
+func PauseOrchestrationAnnotationCheck[PT metav1.Object]() func(PT) field.ErrorList {
+	return func(obj PT) field.ErrorList { return CheckPauseOrchestrationAnnotation(obj) }
 }

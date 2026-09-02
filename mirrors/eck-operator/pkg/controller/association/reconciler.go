@@ -40,9 +40,7 @@ import (
 	"github.com/sourcehawk/operator-api-mirrors/mirrors/eck-operator/pkg/utils/rbac"
 )
 
-var (
-	defaultRequeue = reconcile.Result{RequeueAfter: reconciler.DefaultRequeue}
-)
+var defaultRequeue = reconcile.Result{RequeueAfter: reconciler.DefaultRequeue}
 
 // AssociationInfo contains information specific to a particular associated resource (eg. Kibana, APMServer, etc.).
 type AssociationInfo struct { //nolint:revive
@@ -51,6 +49,9 @@ type AssociationInfo struct { //nolint:revive
 	AssociationType commonv1.AssociationType
 	// AssociatedObjTemplate builds an empty typed associated object (eg. &Kibana{} for a Kibana to Elasticsearch association).
 	AssociatedObjTemplate func() commonv1.Associated
+	// AssociatedObjListTemplate builds an empty typed list of associated objects (e.g. &KibanaList{}).
+	// Used by WatchNamespaceFlips to re-enqueue all associated objects when a namespace state change to match.
+	AssociatedObjListTemplate func() client.ObjectList
 	// ReferencedObjTemplate builds an empty referenced object (e.g. Elasticsearch{} for a Kibana to Elasticsearch association).
 	ReferencedObjTemplate func() client.Object
 	// ReferencedResourceNamer is used to build the name of the Secret which contains the CA of the referenced resource
@@ -89,6 +90,12 @@ type AssociationInfo struct { //nolint:revive
 	// pointing to the Beat resource).
 	AssociationResourceNamespaceLabelName string
 
+	// ReconcileTransitiveESSecrets is an optional callback invoked during association reconciliation to manage
+	// secrets related to a transitive Elasticsearch reference (e.g. Agent -> Fleet Server -> Elasticsearch).
+	// It receives the association metadata for label propagation and returns a TransitiveESRef (stored in the
+	// association conf annotation) along with reconciler results for requeue scheduling.
+	ReconcileTransitiveESSecrets func(context.Context, k8s.Client, commonv1.Association, metadata.Metadata) (*commonv1.TransitiveESRef, *reconciler.Results)
+
 	// ElasticsearchUserCreation specifies settings to create an Elasticsearch user as part of the association.
 	// May be nil if no user creation is required.
 	ElasticsearchUserCreation *ElasticsearchUserCreation
@@ -126,6 +133,17 @@ func (a AssociationInfo) userLabelSelector(
 ) client.MatchingLabels {
 	return maps.Merge(
 		map[string]string{commonv1.TypeLabelName: user.AssociatedUserType},
+		a.AssociationResourceLabels(associated, association),
+	)
+}
+
+// serviceAccountTokenLabelSelector returns labels selecting ES-side service-account-token secrets for this association.
+func (a AssociationInfo) serviceAccountTokenLabelSelector(
+	associated types.NamespacedName,
+	association types.NamespacedName,
+) client.MatchingLabels {
+	return maps.Merge(
+		map[string]string{commonv1.TypeLabelName: user.ServiceAccountTokenType},
 		a.AssociationResourceLabels(associated, association),
 	)
 }
@@ -327,6 +345,15 @@ func (r *Reconciler) reconcileAssociation(ctx context.Context, association commo
 		ClientCertSecretName: clientCertSecretName,
 	}
 
+	if r.ReconcileTransitiveESSecrets != nil {
+		transitiveES, ret := r.ReconcileTransitiveESSecrets(ctx, r.Client, association, assocMeta)
+		results.WithResults(ret)
+		if ret.HasError() {
+			return commonv1.AssociationPending, results
+		}
+		expectedAssocConf.TransitiveESRef = transitiveES
+	}
+
 	if secretsHash != nil {
 		expectedAssocConf.AdditionalSecretsHash = fmt.Sprint(secretsHash.Sum32())
 	}
@@ -469,16 +496,35 @@ func (r *Reconciler) getElasticsearch(
 
 // Unbind removes the association resources.
 func (r *Reconciler) Unbind(ctx context.Context, association commonv1.Association) error {
+	associated := k8s.ExtractNamespacedName(association)
+	assocRef := association.AssociationRef().NamespacedName()
+
 	// Ensure that user in Elasticsearch is deleted to prevent illegitimate access
 	if err := k8s.DeleteSecretMatching(
 		ctx,
 		r.Client,
-		r.userLabelSelector(
-			k8s.ExtractNamespacedName(association),
-			association.AssociationRef().NamespacedName(),
-		)); err != nil {
+		r.userLabelSelector(associated, assocRef),
+	); err != nil {
 		return err
 	}
+
+	// Delete Elasticsearch-side service-account-token secrets. Elasticsearch reads these to validate
+	// bearer tokens, so removing them immediately revokes access on the Elasticsearch side.
+	if err := k8s.DeleteSecretMatching(
+		ctx,
+		r.Client,
+		r.serviceAccountTokenLabelSelector(associated, assocRef),
+	); err != nil {
+		return err
+	}
+
+	// Delete the application-side service-account token secret (lives in the associated resource's namespace).
+	if r.ElasticsearchUserCreation != nil {
+		if err := k8s.DeleteSecretIfExists(ctx, r.Client, secretKey(association, r.ElasticsearchUserCreation.UserSecretSuffix)); err != nil {
+			return err
+		}
+	}
+
 	// Also remove the association configuration
 	return RemoveAssociationConf(ctx, r.Client, association)
 }
@@ -555,9 +601,14 @@ func resultFromStatuses(statusMap commonv1.AssociationStatusMap) reconcile.Resul
 	return reconcile.Result{} // we are done or there is not much we can do
 }
 
-func (r *Reconciler) onDelete(ctx context.Context, associated types.NamespacedName) {
-	// remove watches
+// OnNamespaceOutOfScope releases all controller-local state associated with the given associated
+// resource when its namespace no longer matches the operator's namespace selector.
+func (r *Reconciler) OnNamespaceOutOfScope(associated types.NamespacedName) {
 	r.removeWatches(associated)
+}
+
+func (r *Reconciler) onDelete(ctx context.Context, associated types.NamespacedName) {
+	r.OnNamespaceOutOfScope(associated)
 
 	// delete user Secret in the Elasticsearch namespace
 	if err := deleteOrphanedResources(ctx, r.Client, r.AssociationInfo, associated, nil); err != nil {

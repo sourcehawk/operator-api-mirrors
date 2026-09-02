@@ -35,10 +35,6 @@ var (
 
 // Validate validates the StackConfigPolicy. There's no update-specific checks, so the old parameter is ignored.
 func Validate(p *StackConfigPolicy, _ *StackConfigPolicy) (admission.Warnings, error) {
-	return p.validate()
-}
-
-func (p *StackConfigPolicy) validate() (admission.Warnings, error) {
 	warnings := admission.Warnings(p.GetWarnings())
 	var errors field.ErrorList
 
@@ -85,6 +81,9 @@ func validSettings(policy *StackConfigPolicy) field.ErrorList {
 	}
 	if policy.Spec.Elasticsearch.SecurityRoleMappings != nil {
 		settingsCount += len(policy.Spec.Elasticsearch.SecurityRoleMappings.Data)
+	}
+	if policy.Spec.Elasticsearch.SecurityRoles != nil {
+		settingsCount += len(policy.Spec.Elasticsearch.SecurityRoles.Data)
 	}
 	if policy.Spec.Elasticsearch.IndexLifecyclePolicies != nil {
 		settingsCount += len(policy.Spec.Elasticsearch.IndexLifecyclePolicies.Data)
