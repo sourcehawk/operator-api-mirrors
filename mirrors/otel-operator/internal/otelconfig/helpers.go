@@ -1,10 +1,9 @@
 // Copyright The OpenTelemetry Authors
 // SPDX-License-Identifier: Apache-2.0
 
-package v1beta1
+package otelconfig
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"reflect"
@@ -13,35 +12,41 @@ import (
 	"strings"
 )
 
+const (
+	defaultServicePort int32 = 8888
+	defaultServiceHost       = "0.0.0.0"
+)
+
 // parseAddressEndpoint parses the address and returns the host and port.
 // If the address is an environment variable, it returns the default port.
 // If the address is an explicit port, it returns the port.
 // If the address is not valid, it returns an error.
-func parseAddressEndpoint(address string) (string, int32, error) {
+func parseAddressEndpoint(address string) (host string, port int32, err error) {
 	// The regex below matches on strings that end with a colon followed by the environment variable expansion syntax.
 	// So it should match on strings ending with: ":${env:POD_IP}" or ":${POD_IP}".
 	const portEnvVarRegex = `:\${[env:]?.*}$`
 	isPortEnvVar := regexp.MustCompile(portEnvVarRegex).MatchString(address)
 	if isPortEnvVar {
-		errMsg := fmt.Sprintf("couldn't determine metrics port from configuration: %s", address)
-		return "", 0, errors.New(errMsg)
+		return "", 0, fmt.Errorf("couldn't determine metrics port from configuration: %s", address)
 	}
 
 	// The regex below matches on strings that end with a colon followed by 1 or more numbers (representing the port).
 	const explicitPortRegex = `:(\d+$)`
 	explicitPortMatches := regexp.MustCompile(explicitPortRegex).FindStringSubmatch(address)
 	if len(explicitPortMatches) <= 1 {
-		return address, defaultServicePort, nil
+		host = address
+		port = defaultServicePort
+		return host, port, nil
 	}
 
-	port, err := strconv.ParseInt(explicitPortMatches[1], 10, 32)
+	p, err := strconv.ParseInt(explicitPortMatches[1], 10, 32)
 	if err != nil {
-		errMsg := fmt.Sprintf("couldn't determine metrics port from configuration: %s", address)
-		return "", 0, errors.New(errMsg)
+		return "", 0, fmt.Errorf("couldn't determine metrics port from configuration: %s", address)
 	}
+	port = intToInt32Safe(int(p))
 
-	host, _, _ := strings.Cut(address, explicitPortMatches[0])
-	return host, intToInt32Safe(int(port)), nil
+	host, _, _ = strings.Cut(address, explicitPortMatches[0])
+	return host, port, nil
 }
 
 // addPrefix adds a prefix to each element of the array.
